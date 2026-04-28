@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Project artefacts
+.env
+storage_state.json
+outputs/
+*.sqlite
+*.sqlite-journal
+
+# Editor
+.vscode/
+.idea/
