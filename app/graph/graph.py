@@ -21,6 +21,7 @@ from app.graph import meta_ai
 from app.graph import music as music_mod
 from app.graph import stitcher as stitcher_mod
 from app.graph.state import JobState
+from app.jobs import store
 from app.storage import paths_for
 
 logger = logging.getLogger(__name__)
@@ -39,15 +40,24 @@ async def node_compose(state: JobState) -> JobState:
 
 
 async def node_generate(state: JobState) -> JobState:
+    job_id = state["job_id"]
     sb = state["storyboard"]
-    paths = paths_for(state["job_id"])
+    paths = paths_for(job_id)
     prompts = [sb.prompt_for_scene(i) for i in range(len(sb.scene_actions))]
-    clip_paths = await meta_ai.generate_clips(prompts, paths.clip_path)
+
+    await store.update_progress(job_id, stage="generate", scene=0)
+
+    async def on_scene(scene_num: int) -> None:
+        await store.update_progress(job_id, stage="generate", scene=scene_num)
+
+    clip_paths = await meta_ai.generate_clips(prompts, paths.clip_path, progress_cb=on_scene)
     return {"clip_paths": [str(p) for p in clip_paths]}
 
 
 async def node_stitch(state: JobState) -> JobState:
-    paths = paths_for(state["job_id"])
+    job_id = state["job_id"]
+    await store.update_progress(job_id, stage="stitch")
+    paths = paths_for(job_id)
     sb = state["storyboard"]
     out = await stitcher_mod.stitch(
         [Path(p) for p in state["clip_paths"]],
@@ -58,7 +68,9 @@ async def node_stitch(state: JobState) -> JobState:
 
 
 async def node_music(state: JobState) -> JobState:
-    paths = paths_for(state["job_id"])
+    job_id = state["job_id"]
+    await store.update_progress(job_id, stage="music")
+    paths = paths_for(job_id)
     final = await music_mod.add_music(
         stitched_mp4=paths.stitched,
         music_dest=paths.music_track,

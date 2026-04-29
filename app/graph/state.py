@@ -31,8 +31,11 @@ class Storyboard(BaseModel):
     )
 
     def prompt_for_scene(self, index: int) -> str:
+        # Lead with an explicit video directive — meta.ai's unified Create
+        # tool routes by intent ("Describe an image or video..."), and
+        # without this leading phrase it defaults to image generation.
         action = self.scene_actions[index]
-        parts = [self.style_anchor, self.setting_anchor]
+        parts = ["Create a 5-second cinematic video", self.style_anchor, self.setting_anchor]
         if self.character_anchors:
             parts.append(self.character_anchors)
         parts.append(f"SCENE: {action}")

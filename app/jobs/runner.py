@@ -39,14 +39,13 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
                 # Filter out non-JSON-serializable values (e.g. Storyboard
                 # Pydantic instances). They live in storyboard.json on disk
                 # already; sqlite is for progress reporting only.
+                # Note: stage is owned by the nodes themselves (they update it
+                # at start), so we don't write stage here — that would clobber
+                # the *current* stage with the *just-finished* node name.
                 serializable = {
                     k: v for k, v in patch.items() if isinstance(v, (str, int, float, bool, list))
                 }
-                await store.update_progress(
-                    job_id,
-                    stage=node_name,
-                    state_patch=serializable,
-                )
+                await store.update_progress(job_id, state_patch=serializable)
 
         result_url = f"{settings.public_base_url.rstrip('/')}/jobs/{job_id}/download"
         await store.update_progress(job_id, status="done", stage="done", result_url=result_url)

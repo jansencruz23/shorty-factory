@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from playwright.async_api import (
     BrowserContext,
@@ -89,7 +89,10 @@ async def _switch_to_video_mode(page: Page) -> None:
                 return
         except Exception:
             continue
-    logger.warning("No explicit video-mode toggle found; proceeding without one.")
+    # No toggle found — that's expected on the unified "Create" UI.
+    # We rely on the prompt prefix ("Create a 5-second cinematic video.")
+    # to signal intent. The toggle, when it exists, is just a hint.
+    logger.debug("no explicit video-mode toggle; relying on prompt-based intent routing")
 
 
 async def _submit_prompt(page: Page, prompt: str) -> None:
@@ -108,7 +111,19 @@ async def _submit_prompt(page: Page, prompt: str) -> None:
 
 async def _wait_for_video_and_download(page: Page, dest: Path) -> None:
     video_loc = page.locator(META_SELECTORS["rendered_video"]).last
-    await video_loc.wait_for(state="attached", timeout=GENERATION_TIMEOUT_MS)
+    try:
+        await video_loc.wait_for(state="attached", timeout=GENERATION_TIMEOUT_MS)
+    except PWTimeout:
+        # Capture what meta.ai is actually showing — rate-limit banner,
+        # error toast, queued spinner, etc. — so the failure is debuggable.
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shot = dest.with_suffix(".timeout.png")
+        try:
+            await page.screenshot(path=str(shot), full_page=True)
+            logger.error("video timeout — page snapshot saved to %s", shot)
+        except Exception as snap_err:
+            logger.warning("could not capture timeout screenshot: %s", snap_err)
+        raise
 
     src = await video_loc.get_attribute("src")
     if not src:
@@ -143,8 +158,13 @@ async def _generate_one(context: BrowserContext, prompt: str, dest: Path) -> Non
 async def generate_clips(
     prompts: list[str],
     clip_path_for: Callable[[int], Path],
+    progress_cb: Callable[[int], Awaitable[None]] | None = None,
 ) -> list[Path]:
-    """Generate one clip per prompt, sequentially, in a single browser context."""
+    """Generate one clip per prompt, sequentially, in a single browser context.
+
+    progress_cb (if provided) is awaited with the 1-indexed scene number
+    *before* each clip starts — so the DB can report "generating clip i/N".
+    """
     if not settings.meta_storage_state.exists():
         raise MetaSessionExpired(
             f"{settings.meta_storage_state} not found. Run scripts/capture_session.py first."
@@ -165,6 +185,8 @@ async def generate_clips(
             for i, prompt in enumerate(prompts):
                 dest = clip_path_for(i)
                 logger.info("generating clip %d/%d -> %s", i + 1, len(prompts), dest)
+                if progress_cb:
+                    await progress_cb(i + 1)
                 await _generate_one(context, prompt, dest)
                 out_paths.append(dest)
                 await asyncio.sleep(random.uniform(8, 20))
