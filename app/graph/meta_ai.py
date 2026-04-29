@@ -95,7 +95,11 @@ async def _switch_to_video_mode(page: Page) -> None:
 async def _submit_prompt(page: Page, prompt: str) -> None:
     input_loc = await _first_visible(page, META_SELECTORS["prompt_input"])
     await input_loc.click()
-    await input_loc.type(prompt, delay=random.randint(35, 85))
+    # meta.ai's input is a Lexical editor — it re-renders the contenteditable
+    # DOM node on input, so Locator.type() races against stale element handles.
+    # page.keyboard.type dispatches at the page level (no element handle), so
+    # it survives Lexical's re-renders.
+    await page.keyboard.type(prompt, delay=random.randint(20, 50))
     await asyncio.sleep(0.4)
 
     submit_loc = await _first_visible(page, META_SELECTORS["submit_button"], timeout=3000)

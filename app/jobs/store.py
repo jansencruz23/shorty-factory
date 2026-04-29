@@ -13,7 +13,7 @@ async def create_job(job_id: str, state: dict[str, Any], webhook_url: str | None
         job = Job(
             job_id=job_id,
             state_json=json.dumps(state, default=str),
-            total_scene=state.get("num_scenes"),
+            total_scenes=state.get("num_scenes"),
             webhook_url=webhook_url,
         )
         session.add(job)

@@ -58,11 +58,14 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
 
     except Exception as e:
         logger.exception("[%s] job failed", job_id)
-        await store.update_progress(job_id, status="error", error=str(e))
+        # Some exceptions stringify to "" (validation errors, bare raises);
+        # always include the type so the DB row is never blank.
+        err_msg = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+        await store.update_progress(job_id, status="error", error=err_msg)
         if webhook_url:
             await _post_webhook(
                 webhook_url,
-                {"job_id": job_id, "status": "error", "error": str(e)},
+                {"job_id": job_id, "status": "error", "error": err_msg},
             )
 
 
