@@ -236,6 +236,8 @@ Empty file. Just makes `app/` a package.
 Single source of truth for paths, dimensions, and provider config.
 
 ```python
+"""Settings loaded from .env: NVIDIA Build creds, paths, video dimensions, music gain.
+Single source of truth — every magic number elsewhere is named here."""
 from pathlib import Path
 
 from pydantic import Field
@@ -272,6 +274,8 @@ class Settings(BaseSettings):
     music_gain_db: float = -8.0
 
 
+# Eager mkdirs at import time: convenient for local dev. The trade-off is
+# that `import app.config` has filesystem side effects. Acceptable here.
 settings = Settings()
 settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 (settings.assets_dir / "music").mkdir(parents=True, exist_ok=True)
@@ -296,6 +300,8 @@ def resolve_caption_font() -> Path:
 Centralizes per-job filesystem layout. **No other module should construct paths under `outputs/`.**
 
 ```python
+"""Per-job filesystem layout. Use paths_for(job_id) — no other module should
+construct outputs/{job_id}/* paths."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -319,7 +325,7 @@ class JobPaths:
 
     @property
     def music_track(self) -> Path:
-        return self.root / "music.m4a"
+        return self.root / "music.mp3"
 
     @property
     def final(self) -> Path:
@@ -349,6 +355,9 @@ Empty.
 The two key types every other graph file refers to.
 
 ```python
+"""Storyboard (LLM output) and JobState (LangGraph state).
+Storyboard.prompt_for_scene is where visual continuity across N independent
+Meta generations is enforced — anchors are repeated verbatim, only the action changes."""
 from __future__ import annotations
 
 from typing import TypedDict
@@ -380,6 +389,9 @@ class Storyboard(BaseModel):
     )
 
     def prompt_for_scene(self, index: int) -> str:
+        # Anchors first, action last. The anchors are identical across all N
+        # scenes — that's the entire visual-continuity strategy, because Meta
+        # has no memory between generations. Only `action` changes per scene.
         action = self.scene_actions[index]
         parts = [self.style_anchor, self.setting_anchor]
         if self.character_anchors:
@@ -388,6 +400,8 @@ class Storyboard(BaseModel):
         return ". ".join(p.rstrip(". ") for p in parts) + "."
 
 
+# total=False so each LangGraph node can return a *partial* dict; the
+# framework merges those patches into the running state. Every key is optional.
 class JobState(TypedDict, total=False):
     job_id: str
     idea: str
@@ -415,6 +429,8 @@ class JobState(TypedDict, total=False):
 Async SQLModel engine + session factory. One file, the whole DB plumbing.
 
 ```python
+"""Async SQLModel engine + session factory. init_db() creates tables
+idempotently on startup."""
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -434,6 +450,9 @@ engine = create_async_engine(
 async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
+    # Without this, SQLAlchemy expires loaded attributes after commit and any
+    # subsequent `job.status` read triggers an implicit (sync) refresh — which
+    # blows up under async. Setting it False keeps attributes valid post-commit.
     expire_on_commit=False,
 )
 
@@ -463,6 +482,8 @@ Empty.
 The single Job table. `state_json` is intentionally a JSON string column so we don't migrate when `JobState` grows new fields.
 
 ```python
+"""Single Job table. state_json is a JSON blob so we don't migrate
+when JobState grows new fields."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -478,6 +499,8 @@ class Job(SQLModel, table=True):
     __tablename__ = "jobs"
 
     job_id: str = Field(primary_key=True, max_length=32)
+    # Indexed for cheap "find queued/running jobs" lookups — the polling
+    # GET /jobs/{id} hits this on every tick.
     status: str = Field(default="queued", index=True)
     stage: str | None = None
     scene: int | None = None
@@ -500,6 +523,7 @@ class Job(SQLModel, table=True):
 ORM-backed CRUD. No raw SQL.
 
 ```python
+"""ORM-backed CRUD for the Job row. Read by the API; written by the runner."""
 from __future__ import annotations
 
 import json
@@ -642,6 +666,9 @@ async def compose(
         [SystemMessage(content=SYSTEM), HumanMessage(content=user)]
     )
 
+    # Asymmetric on purpose: extra scenes are silently truncated, but a
+    # shortfall fails loudly. We can always drop scenes we don't need; we
+    # can't fabricate scenes we wanted but didn't get.
     if len(storyboard.scene_actions) > num_scenes:
         storyboard.scene_actions = storyboard.scene_actions[:num_scenes]
     if len(storyboard.scene_actions) < num_scenes:
@@ -780,6 +807,8 @@ async def _wait_for_video_and_download(page: Page, dest: Path) -> None:
     dest.write_bytes(await response.body())
 
 
+# MetaSessionExpired is intentionally NOT in the retry set — retrying won't
+# heal a stale storage_state.json; the user has to recapture the session.
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(min=4, max=20),
@@ -1013,12 +1042,15 @@ async def _import_track(niche: str | None, override: str | None, duration: float
     """Loop+trim the imported track to `duration`, with fade in/out."""
     src = _pick_track(niche, override)
     fade = 1.5
+    # `-stream_loop -1 -i src` loops the input forever; `-t duration` trims
+    # the output to the exact length we need. Standard "loop a short bed
+    # behind a longer video" pattern.
     args = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-stream_loop", "-1", "-i", str(src),
         "-t", f"{duration:.3f}",
         "-af", f"afade=t=in:st=0:d={fade},afade=t=out:st={duration - fade:.3f}:d={fade}",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "libmp3lame", "-b:a", "192k",
         str(dest),
     ]
     proc = await asyncio.create_subprocess_exec(
@@ -1068,7 +1100,7 @@ async def _generate_track(niche: str | None, duration: float, dest: Path) -> Pat
         "-i", str(raw_wav),
         "-t", f"{duration:.3f}",
         "-af", f"afade=t=in:st=0:d={fade},afade=t=out:st={duration - fade:.3f}:d={fade}",
-        "-c:a", "aac", "-b:a", "192k",
+        "-c:a", "libmp3lame", "-b:a", "192k",
         str(dest),
     ]
     proc = await asyncio.create_subprocess_exec(
@@ -1287,6 +1319,9 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
 
 
 def spawn(job_id: str, initial_state: JobState, webhook_url: str | None) -> asyncio.Task:
+    # Fire-and-forget: we don't await this. If uvicorn restarts mid-job, the
+    # task dies with the process and the row is left in `running`. Acceptable
+    # for v1; swap to arq/Celery if you need durability.
     return asyncio.create_task(run_job(job_id, initial_state, webhook_url))
 ```
 
@@ -1297,6 +1332,7 @@ Empty.
 ### 6.20 `app/api/schemas.py`
 
 ```python
+"""Pydantic request/response models for the /jobs endpoints."""
 from __future__ import annotations
 
 from typing import Literal
@@ -1334,6 +1370,8 @@ class JobStatus(BaseModel):
 ### 6.21 `app/api/routes.py`
 
 ```python
+"""HTTP routes: POST /jobs (enqueue), GET /jobs/{id} (status),
+GET /jobs/{id}/download (stream final.mp4)."""
 from __future__ import annotations
 
 import uuid
@@ -1352,6 +1390,8 @@ router = APIRouter()
 
 @router.post("/jobs", response_model=JobCreateResponse, status_code=202)
 async def create_job(req: JobCreate) -> JobCreateResponse:
+    # 12 hex chars ≈ 48 bits of entropy. Collision risk is negligible at
+    # any scale this service is plausibly operating at.
     job_id = uuid.uuid4().hex[:12]
     initial: JobState = {
         "job_id": job_id,
@@ -1400,6 +1440,8 @@ async def download(job_id: str):
 ### 6.22 `app/api/main.py`
 
 ```python
+"""FastAPI app + lifespan. Tables are created once at startup;
+routes are mounted from app.api.routes."""
 from __future__ import annotations
 
 import logging

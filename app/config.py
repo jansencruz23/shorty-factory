@@ -1,3 +1,6 @@
+"""Settings loaded from .env: NVIDIA Build creds, paths, video dimensions, music gain.
+Single source of truth — every magic number elsewhere is named here."""
+
 from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
