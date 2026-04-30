@@ -1,6 +1,7 @@
 """Settings loaded from .env: NVIDIA Build creds, paths, video dimensions, music gain.
 Single source of truth — every magic number elsewhere is named here."""
 
+import os
 from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,11 +36,29 @@ class Settings(BaseSettings):
 
     music_gain_db: float = -8.0
 
+    # LangSmith observability — when langsmith_tracing is true and the API
+    # key is set, langchain/langgraph auto-trace every LLM call and graph
+    # node. Non-LLM steps (Playwright, ffmpeg, MusicGen) surface via the
+    # @traceable decorators in app/graph/{meta_ai,stitcher,music}.py.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = "shorty-factory"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
 
 settings = Settings()
 settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 (settings.assets_dir / "music").mkdir(parents=True, exist_ok=True)
 (settings.assets_dir / "fonts").mkdir(parents=True, exist_ok=True)
+
+# Push LangSmith config to os.environ so langchain/langgraph (which read
+# from environment, not from our Settings object) pick it up. Done once at
+# import time, before any langchain client is constructed.
+if settings.langsmith_tracing and settings.langsmith_api_key:
+    os.environ["LANGSMITH_TRACING"] = "true"
+    os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
+    os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+    os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
 
 
 def resolve_caption_font() -> Path:

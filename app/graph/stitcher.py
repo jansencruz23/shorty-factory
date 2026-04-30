@@ -14,6 +14,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from langsmith import traceable
+
 from app.config import resolve_caption_font, settings
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ def _build_filtergraph(num_inputs: int, caption_textfile: Path, font_path: Path)
     return ";".join(parts)
 
 
+@traceable(name="stitcher.stitch", run_type="tool")
 async def stitch(clip_paths: list[Path], pov_caption: str, dest: Path) -> Path:
     """Concat + 9:16 normalize + POV caption overlay. Writes muted MP4 to `dest`."""
     if not clip_paths:

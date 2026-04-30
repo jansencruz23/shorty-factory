@@ -12,6 +12,7 @@ import logging
 import random
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from langsmith import traceable
 from playwright.async_api import (
     BrowserContext,
     Page,
@@ -138,12 +139,15 @@ async def _wait_for_video_and_download(page: Page, dest: Path) -> None:
 
 # MetaSessionExpired is intentionally NOT in the retry set — retrying won't
 # heal a stale storage_state.json; the user has to recapture the session.
+# @traceable sits *inside* @retry so each retry attempt is its own span,
+# making rate-limit / UI-drift patterns visible in LangSmith.
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(min=4, max=20),
     retry=retry_if_exception_type((PWTimeout, MetaUIChanged)),
     reraise=True,
 )
+@traceable(name="meta_ai.generate_clip", run_type="tool")
 async def _generate_one(context: BrowserContext, prompt: str, dest: Path) -> None:
     page = await context.new_page()
     try:
@@ -155,6 +159,7 @@ async def _generate_one(context: BrowserContext, prompt: str, dest: Path) -> Non
         await page.close()
 
 
+@traceable(name="meta_ai.generate_clips", run_type="tool")
 async def generate_clips(
     prompts: list[str],
     clip_path_for: Callable[[int], Path],

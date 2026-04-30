@@ -14,6 +14,8 @@ import logging
 import random
 from pathlib import Path
 
+from langsmith import traceable
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -168,6 +170,7 @@ async def _generate_track(niche: str | None, duration: float, dest: Path) -> Pat
     return dest
 
 
+@traceable(name="music.add_music", run_type="tool")
 async def add_music(
     stitched_mp4: Path,
     music_dest: Path,
