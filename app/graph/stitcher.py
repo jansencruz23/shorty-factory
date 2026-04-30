@@ -46,7 +46,9 @@ def _build_filtergraph(num_inputs: int, caption_textfile: Path, font_path: Path)
     parts.append(
         f"[concat]drawtext=fontfile='{fontfile}':textfile='{textfile}':"
         f"fontsize={settings.caption_font_size}:fontcolor=white:"
-        f"box=1:boxcolor=black@0.55:boxborderw=20:"
+        # No background box — keep readability via a black stroke around
+        # the glyphs (same look as pro Shorts captions).
+        f"borderw=4:bordercolor=black:"
         f"x=(w-text_w)/2:y=h*0.22[out]"
     )
 
