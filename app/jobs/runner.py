@@ -14,6 +14,7 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
+from app.exceptions import classify_error
 from app.graph.graph import build_graph
 from app.graph.state import JobState
 from app.jobs import store
@@ -53,7 +54,12 @@ async def reconcile_orphaned_jobs() -> None:
         if job.webhook_url:
             await post_webhook(
                 job.webhook_url,
-                {"job_id": job.job_id, "status": "error", "error": err},
+                {
+                    "job_id": job.job_id,
+                    "status": "error",
+                    "error": err,
+                    "error_type": "orphaned",
+                },
             )
 
 
@@ -89,11 +95,17 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
         # Some exceptions stringify to "" (validation errors, bare raises);
         # always include the type so the DB row is never blank.
         err_msg = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+        err_type = classify_error(e)
         await store.update_progress(job_id, status="error", error=err_msg)
         if webhook_url:
             await post_webhook(
                 webhook_url,
-                {"job_id": job_id, "status": "error", "error": err_msg},
+                {
+                    "job_id": job_id,
+                    "status": "error",
+                    "error": err_msg,
+                    "error_type": err_type,
+                },
             )
 
 

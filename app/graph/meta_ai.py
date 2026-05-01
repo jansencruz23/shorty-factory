@@ -22,6 +22,7 @@ from playwright.async_api import (
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
+from app.exceptions import ProviderSessionExpired, ProviderUIChanged
 
 
 logger = logging.getLogger(__name__)
@@ -51,12 +52,16 @@ GENERATION_TIMEOUT_MS = 180_000  # 3 min per clip
 NAV_TIMEOUT_MS = 30_000
 
 
-class MetaSessionExpired(RuntimeError):
+class MetaSessionExpired(ProviderSessionExpired):
     """storage_state.json no longer authenticates — re-run capture_session.py."""
 
+    provider = "meta_ai"
 
-class MetaUIChanged(RuntimeError):
+
+class MetaUIChanged(ProviderUIChanged):
     """A required selector didn't match. Update META_SELECTORS."""
+
+    provider = "meta_ai"
 
 
 async def _first_visible(page: Page, selectors: list[str], timeout: int = 5000):
