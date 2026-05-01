@@ -15,7 +15,7 @@ class JobCreate(BaseModel):
     num_scenes: int = Field(default=8, ge=2, le=settings.max_scenes)
     pov_caption: str | None = None
     music_track: str | None = None
-    music_mode: Literal["import", "generate"] = "import"
+    music_mode: Literal["import", "generate"] = "generate"
     webhook_url: str | None = None
 
 

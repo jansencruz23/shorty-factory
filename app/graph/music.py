@@ -110,15 +110,10 @@ async def _import_track(
 
 
 async def _generate_track(niche: str | None, duration: float, dest: Path) -> Path:
-    """MusicGen via transformers. Lazy import to keep base install lean."""
-    try:
-        import torch  # noqa: F401
-        from transformers import AutoProcessor, MusicgenForConditionalGeneration
-    except ImportError as e:
-        raise RuntimeError(
-            "music_mode='generate' needs torch and transformers installed. "
-            "Run `uv add torch transformers scipy` first."
-        ) from e
+    """MusicGen via transformers. Lazy-imported because torch is heavy
+    (~2GB on disk, ~5s import) and we don't want to pay it on app startup."""
+    import torch  # noqa: F401
+    from transformers import AutoProcessor, MusicgenForConditionalGeneration
 
     import scipy.io.wavfile
 

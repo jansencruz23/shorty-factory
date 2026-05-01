@@ -4,8 +4,13 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from typing import Any
+
+from sqlmodel import select
+
 from app.db import async_session_factory
 from app.jobs.models import Job
+
+ACTIVE_STATUSES = ("queued", "running")
 
 
 async def create_job(job_id: str, state: dict[str, Any], webhook_url: str | None) -> None:
@@ -59,3 +64,29 @@ async def update_progress(
 async def get_job(job_id: str) -> Job | None:
     async with async_session_factory() as session:
         return await session.get(Job, job_id)
+
+
+async def list_active_jobs() -> list[Job]:
+    """Jobs currently queued or running. Used for single-flight guard and
+    startup-time orphan reconciliation after a uvicorn restart."""
+    async with async_session_factory() as session:
+        stmt = select(Job).where(Job.status.in_(ACTIVE_STATUSES))
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+
+async def has_active_job() -> bool:
+    """True if any job is queued or running. Cheap pre-check for POST /jobs."""
+    async with async_session_factory() as session:
+        stmt = select(Job).where(Job.status.in_(ACTIVE_STATUSES)).limit(1)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+
+async def get_last_success() -> Job | None:
+    """Most recently completed job. Drives /healthz `last_success_at` and
+    n8n's once-per-day cron guard."""
+    async with async_session_factory() as session:
+        stmt = select(Job).where(Job.status == "done").order_by(Job.updated_at.desc()).limit(1)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()

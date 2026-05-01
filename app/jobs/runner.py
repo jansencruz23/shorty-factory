@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import settings
 from app.graph.graph import build_graph
@@ -20,12 +21,40 @@ from app.jobs import store
 logger = logging.getLogger(__name__)
 
 
-async def _post_webhook(url: str, payload: dict[str, Any]) -> None:
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=8), reraise=True)
+async def _post_webhook_attempt(url: str, payload: dict[str, Any]) -> None:
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+
+
+async def post_webhook(url: str, payload: dict[str, Any]) -> None:
+    """Best-effort POST to a job webhook. Retries 3x with exponential backoff;
+    on final failure logs and swallows so a webhook outage never fails the job
+    itself. Public so the startup orphan-reconciliation in app.api.main can
+    re-use it."""
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(url, json=payload)
+        await _post_webhook_attempt(url, payload)
     except Exception as e:
-        logger.warning("webhook post to %s failed: %s", url, e)
+        logger.warning("webhook to %s failed after retries: %s", url, e)
+
+
+async def reconcile_orphaned_jobs() -> None:
+    """On startup, mark any job left in 'queued'/'running' as errored — that
+    only happens when uvicorn died mid-job. Also fire the webhook so n8n's
+    Wait node receives a terminal signal instead of timing out after 4h."""
+    rows = await store.list_active_jobs()
+    if not rows:
+        return
+    logger.warning("reconciling %d orphaned job(s) from previous run", len(rows))
+    for job in rows:
+        err = "orphaned by restart"
+        await store.update_progress(job.job_id, status="error", error=err)
+        if job.webhook_url:
+            await post_webhook(
+                job.webhook_url,
+                {"job_id": job.job_id, "status": "error", "error": err},
+            )
 
 
 async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None) -> None:
@@ -50,7 +79,7 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
         result_url = f"{settings.public_base_url.rstrip('/')}/jobs/{job_id}/download"
         await store.update_progress(job_id, status="done", stage="done", result_url=result_url)
         if webhook_url:
-            await _post_webhook(
+            await post_webhook(
                 webhook_url,
                 {"job_id": job_id, "status": "done", "result_url": result_url},
             )
@@ -62,7 +91,7 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
         err_msg = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
         await store.update_progress(job_id, status="error", error=err_msg)
         if webhook_url:
-            await _post_webhook(
+            await post_webhook(
                 webhook_url,
                 {"job_id": job_id, "status": "error", "error": err_msg},
             )
