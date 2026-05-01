@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 from typing import Any
 
 import httpx
@@ -64,8 +65,13 @@ async def reconcile_orphaned_jobs() -> None:
 
 
 async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None) -> None:
-    graph = build_graph()
-    await store.update_progress(job_id, status="running", stage="compose")
+    # Bind store.update_progress to this job_id and pass it as the graph's
+    # ProgressSink. Nodes call progress(stage=..., scene=...) without ever
+    # importing the store. Status="running" is set here (before the graph
+    # streams) since "running" is a runner-level concern, not a node concern.
+    progress = partial(store.update_progress, job_id)
+    await store.update_progress(job_id, status="running")
+    graph = build_graph(progress=progress)
 
     try:
         async for event in graph.astream(initial_state, stream_mode="updates"):
