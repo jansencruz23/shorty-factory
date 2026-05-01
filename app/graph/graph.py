@@ -60,7 +60,7 @@ def _make_generate_node(progress: ProgressSink):
         async def on_scene(scene_num: int) -> None:
             await progress(stage="generate", scene=scene_num)
 
-        provider = get_video_provider(settings.video_provider)
+        provider = get_video_provider(settings.video.provider)
         clip_paths = await provider.generate_clips(prompts, paths.clip_path, progress_cb=on_scene)
         return {"clip_paths": [str(p) for p in clip_paths]}
 

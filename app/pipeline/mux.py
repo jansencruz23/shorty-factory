@@ -41,7 +41,7 @@ async def probe_duration(mp4: Path) -> float:
 @traceable(name="pipeline.mux", run_type="tool")
 async def mux(stitched_mp4: Path, music_track: Path, dest: Path) -> Path:
     """Combine the silent stitched video and the music bed into the final MP4.
-    Applies the master gain from settings.music_gain_db."""
+    Applies the master gain from settings.music.gain_db."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     args = [
         "ffmpeg",
@@ -63,7 +63,7 @@ async def mux(stitched_mp4: Path, music_track: Path, dest: Path) -> Path:
         "-b:a",
         "192k",
         "-af",
-        f"volume={settings.music_gain_db}dB",
+        f"volume={settings.music.gain_db}dB",
         "-shortest",
         "-movflags",
         "+faststart",

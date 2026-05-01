@@ -54,7 +54,7 @@ async def healthz() -> dict:
     last = await store.get_last_success()
     last_at = last.updated_at if last else None
     ran_today = bool(last_at and last_at.astimezone(timezone.utc).date() == datetime.now(timezone.utc).date())
-    storage_state_present = settings.meta_storage_state.exists()
+    storage_state_present = settings.meta_ai.storage_state.exists()
     active = await store.has_active_job()
     return {
         "ready": storage_state_present and not active,

@@ -81,7 +81,7 @@ async def _ensure_logged_in(page: Page) -> None:
     if await page.locator(META_SELECTORS["login_wall"]).first.is_visible():
         raise MetaSessionExpired(
             f"meta.ai shows a login wall. Re-run scripts/capture_session.py to refresh "
-            f"{settings.meta_storage_state}."
+            f"{settings.meta_ai.storage_state}."
         )
 
 
@@ -177,17 +177,17 @@ class MetaAIVideoProvider:
         clip_path_for: Callable[[int], Path],
         progress_cb: Callable[[int], Awaitable[None]] | None = None,
     ) -> list[Path]:
-        if not settings.meta_storage_state.exists():
+        if not settings.meta_ai.storage_state.exists():
             raise MetaSessionExpired(
-                f"{settings.meta_storage_state} not found. "
+                f"{settings.meta_ai.storage_state} not found. "
                 f"Run scripts/capture_session.py first."
             )
 
         out_paths: list[Path] = []
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=settings.playwright_headless)
+            browser = await pw.chromium.launch(headless=settings.meta_ai.headless)
             context = await browser.new_context(
-                storage_state=str(settings.meta_storage_state),
+                storage_state=str(settings.meta_ai.storage_state),
                 viewport={"width": 1280, "height": 900},
                 user_agent=(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

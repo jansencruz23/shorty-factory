@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _build_filtergraph(num_inputs: int, caption_textfile: Path, font_path: Path) -> str:
-    W, H = settings.video_width, settings.video_height
+    W, H = settings.video.width, settings.video.height
     parts: list[str] = []
 
     # Per-input: split into bg/fg, blur bg, scale fg to fit, overlay.
@@ -47,7 +47,7 @@ def _build_filtergraph(num_inputs: int, caption_textfile: Path, font_path: Path)
     textfile = str(caption_textfile).replace("\\", "/").replace(":", r"\:")
     parts.append(
         f"[concat]drawtext=fontfile='{fontfile}':textfile='{textfile}':"
-        f"fontsize={settings.caption_font_size}:fontcolor=white:"
+        f"fontsize={settings.caption.font_size}:fontcolor=white:"
         # No background box — keep readability via a black stroke around
         # the glyphs (same look as pro Shorts captions).
         f"borderw=4:bordercolor=black:"

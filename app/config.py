@@ -1,53 +1,97 @@
-"""Settings loaded from .env: NVIDIA Build creds, paths, video dimensions, music gain.
-Single source of truth — every magic number elsewhere is named here."""
+"""Settings loaded from .env. Nested pydantic models flatten to env vars
+via the `__` (double-underscore) delimiter, so:
+
+    settings.llm.nvidia_api_key  ←→  LLM__NVIDIA_API_KEY
+    settings.meta_ai.headless    ←→  META_AI__HEADLESS
+    settings.langsmith.tracing   ←→  LANGSMITH__TRACING
+
+Cross-cutting fields that don't belong to any provider/concern (paths,
+public URL, max scenes) stay flat at the top level.
+"""
 
 import os
 from pathlib import Path
-from pydantic import Field
+
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+class LLMSettings(BaseModel):
+    """Composer LLM credentials — NVIDIA Build (OpenAI-compatible)."""
 
-    # NVIDIA Build is OpenAI-compatible
     nvidia_api_key: str = ""
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
     composer_model: str = "meta/llama-3.3-70b-instruct"
 
-    meta_storage_state: Path = ROOT / "storage_state.json"
-    playwright_headless: bool = False
 
-    # Video provider name resolved by app.providers.video.get_video_provider.
-    # Step 5 of the refactor will nest this under settings.video.provider.
-    video_provider: str = "meta_ai"
+class VideoSettings(BaseModel):
+    """Video output dimensions + which provider produces clips."""
 
-    max_scenes: int = Field(default=8, ge=2, le=12)
-    public_base_url: str = "http://localhost:8000"
+    provider: str = "meta_ai"
+    width: int = 1080
+    height: int = 1920
 
+
+class MetaAISettings(BaseModel):
+    """Meta.ai-specific Playwright config. Only consulted when
+    settings.video.provider == 'meta_ai'."""
+
+    storage_state: Path = ROOT / "storage_state.json"
+    headless: bool = False
+
+
+class MusicSettings(BaseModel):
+    """Default music provider + master gain (applied at mux time)."""
+
+    # Default to "musicgen" so unattended runs don't depend on a populated
+    # assets/music/ library. JobCreate's `music_mode` per-job override
+    # still resolves through MUSIC_MODE_TO_PROVIDER.
+    provider: str = "musicgen"
+    gain_db: float = -8.0
+
+
+class CaptionSettings(BaseModel):
+    """POV caption font. The fallback exists so Linux containers without
+    the bundled font still render something readable."""
+
+    font_path: Path = ROOT / "assets" / "fonts" / "Inter-Bold.ttf"
+    font_fallback: Path = Path(r"C:\Windows\Fonts\arialbd.ttf")
+    font_size: int = 64
+
+
+class LangSmithSettings(BaseModel):
+    """LangSmith tracing. When `tracing` is true and `api_key` is set,
+    langchain/langgraph auto-trace every LLM call and graph node, plus
+    the @traceable spans from providers and pipeline."""
+
+    tracing: bool = False
+    api_key: str = ""
+    project: str = "shorty-factory"
+    endpoint: str = "https://api.smith.langchain.com"
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    video: VideoSettings = Field(default_factory=VideoSettings)
+    meta_ai: MetaAISettings = Field(default_factory=MetaAISettings)
+    music: MusicSettings = Field(default_factory=MusicSettings)
+    caption: CaptionSettings = Field(default_factory=CaptionSettings)
+    langsmith: LangSmithSettings = Field(default_factory=LangSmithSettings)
+
+    # Cross-cutting flat fields — used everywhere, no natural namespace.
     outputs_dir: Path = ROOT / "outputs"
     assets_dir: Path = ROOT / "assets"
     jobs_db: Path = ROOT / "jobs.sqlite"
-
-    caption_font_path: Path = ROOT / "assets" / "fonts" / "Inter-Bold.ttf"
-    caption_font_fallback: Path = Path(r"C:\Windows\Fonts\arialbd.ttf")
-    caption_font_size: int = 64
-
-    video_width: int = 1080
-    video_height: int = 1920
-
-    music_gain_db: float = -8.0
-
-    # LangSmith observability — when langsmith_tracing is true and the API
-    # key is set, langchain/langgraph auto-trace every LLM call and graph
-    # node. Non-LLM steps (Playwright, ffmpeg, MusicGen) surface via the
-    # @traceable decorators in app/graph/{meta_ai,stitcher,music}.py.
-    langsmith_tracing: bool = False
-    langsmith_api_key: str = ""
-    langsmith_project: str = "shorty-factory"
-    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    public_base_url: str = "http://localhost:8000"
+    max_scenes: int = Field(default=8, ge=2, le=12)
 
 
 settings = Settings()
@@ -58,19 +102,19 @@ settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 # Push LangSmith config to os.environ so langchain/langgraph (which read
 # from environment, not from our Settings object) pick it up. Done once at
 # import time, before any langchain client is constructed.
-if settings.langsmith_tracing and settings.langsmith_api_key:
+if settings.langsmith.tracing and settings.langsmith.api_key:
     os.environ["LANGSMITH_TRACING"] = "true"
-    os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key
-    os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
-    os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+    os.environ["LANGSMITH_API_KEY"] = settings.langsmith.api_key
+    os.environ["LANGSMITH_PROJECT"] = settings.langsmith.project
+    os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith.endpoint
 
 
 def resolve_caption_font() -> Path:
-    if settings.caption_font_path.exists():
-        return settings.caption_font_path
-    if settings.caption_font_fallback.exists():
-        return settings.caption_font_fallback
+    if settings.caption.font_path.exists():
+        return settings.caption.font_path
+    if settings.caption.font_fallback.exists():
+        return settings.caption.font_fallback
     raise FileNotFoundError(
-        f"No caption font found. Expected one of: {settings.caption_font_path}, "
-        f"{settings.caption_font_fallback}"
+        f"No caption font found. Expected one of: {settings.caption.font_path}, "
+        f"{settings.caption.font_fallback}"
     )

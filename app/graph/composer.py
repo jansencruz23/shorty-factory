@@ -48,9 +48,9 @@ Number of scenes (N): {num_scenes}"""
 def get_structured_llm():
     """Build a ChatOpenAI pointed at NVIDIA Build, wrapped to return Storyboard."""
     llm = ChatOpenAI(
-        model=settings.composer_model,
-        api_key=settings.nvidia_api_key,
-        base_url=settings.nvidia_base_url,
+        model=settings.llm.composer_model,
+        api_key=settings.llm.nvidia_api_key,
+        base_url=settings.llm.nvidia_base_url,
         temperature=0.7,
         max_tokens=2000,
     )
