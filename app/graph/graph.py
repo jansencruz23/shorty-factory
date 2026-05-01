@@ -16,12 +16,14 @@ from pathlib import Path
 
 from langgraph.graph import END, StateGraph
 
+from app.config import settings
 from app.graph import composer as composer_mod
-from app.graph import meta_ai
-from app.graph import music as music_mod
-from app.graph import stitcher as stitcher_mod
 from app.graph.state import JobState
 from app.jobs import store
+from app.pipeline import mux as mux_mod
+from app.pipeline import stitch as stitch_mod
+from app.providers.music import MUSIC_MODE_TO_PROVIDER, get_music_provider
+from app.providers.video import get_video_provider
 from app.storage import paths_for
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,8 @@ async def node_generate(state: JobState) -> JobState:
     async def on_scene(scene_num: int) -> None:
         await store.update_progress(job_id, stage="generate", scene=scene_num)
 
-    clip_paths = await meta_ai.generate_clips(prompts, paths.clip_path, progress_cb=on_scene)
+    provider = get_video_provider(settings.video_provider)
+    clip_paths = await provider.generate_clips(prompts, paths.clip_path, progress_cb=on_scene)
     return {"clip_paths": [str(p) for p in clip_paths]}
 
 
@@ -59,7 +62,7 @@ async def node_stitch(state: JobState) -> JobState:
     await store.update_progress(job_id, stage="stitch")
     paths = paths_for(job_id)
     sb = state["storyboard"]
-    out = await stitcher_mod.stitch(
+    out = await stitch_mod.stitch(
         [Path(p) for p in state["clip_paths"]],
         sb.pov_caption,
         paths.stitched,
@@ -71,14 +74,25 @@ async def node_music(state: JobState) -> JobState:
     job_id = state["job_id"]
     await store.update_progress(job_id, stage="music")
     paths = paths_for(job_id)
-    final = await music_mod.add_music(
-        stitched_mp4=paths.stitched,
-        music_dest=paths.music_track,
-        final_dest=paths.final,
+
+    # Mode → provider name. The JobCreate `music_mode` ("import" | "generate")
+    # is preserved as the public input; internally we resolve it to a
+    # MusicProvider via the factory.
+    mode = state.get("music_mode", "generate")
+    provider_name = MUSIC_MODE_TO_PROVIDER.get(mode)
+    if provider_name is None:
+        raise ValueError(f"unknown music_mode: {mode!r}")
+    provider = get_music_provider(provider_name)
+
+    duration = await mux_mod.probe_duration(paths.stitched)
+    await provider.build_track(
+        duration,
+        paths.music_track,
         niche=state.get("niche"),
-        music_track=state.get("music_track"),
-        mode=state.get("music_mode", "import"),
+        track_override=state.get("music_track"),
     )
+    final = await mux_mod.mux(paths.stitched, paths.music_track, paths.final)
+
     return {"music_path": str(paths.music_track), "final_path": str(final)}
 
 

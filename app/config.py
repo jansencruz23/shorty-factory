@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     meta_storage_state: Path = ROOT / "storage_state.json"
     playwright_headless: bool = False
 
+    # Video provider name resolved by app.providers.video.get_video_provider.
+    # Step 5 of the refactor will nest this under settings.video.provider.
+    video_provider: str = "meta_ai"
+
     max_scenes: int = Field(default=8, ge=2, le=12)
     public_base_url: str = "http://localhost:8000"
 

@@ -3,7 +3,7 @@
 Takes N clips of arbitrary aspect ratios, normalises each to 1080x1920 with
 a blurred-fill background (the standard Shorts/Reels aesthetic), concatenates
 them, and burns in a single persistent POV caption overlay. Audio is dropped
-here — the music module adds the bed afterwards.
+here — the mux step adds the music bed afterwards.
 
 One ffmpeg call with a complex filtergraph. Avoids intermediate files.
 """
@@ -57,7 +57,7 @@ def _build_filtergraph(num_inputs: int, caption_textfile: Path, font_path: Path)
     return ";".join(parts)
 
 
-@traceable(name="stitcher.stitch", run_type="tool")
+@traceable(name="pipeline.stitch", run_type="tool")
 async def stitch(clip_paths: list[Path], pov_caption: str, dest: Path) -> Path:
     """Concat + 9:16 normalize + POV caption overlay. Writes muted MP4 to `dest`."""
     if not clip_paths:
@@ -80,7 +80,7 @@ async def stitch(clip_paths: list[Path], pov_caption: str, dest: Path) -> Path:
         filtergraph,
         "-map",
         "[out]",
-        "-an",  # drop audio; music module adds the bed
+        "-an",  # drop audio; mux step adds the bed
         "-c:v",
         "libx264",
         "-preset",

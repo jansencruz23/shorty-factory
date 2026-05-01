@@ -1,4 +1,4 @@
-"""Playwright driver for meta.ai video generation.
+"""Playwright-driven adapter for meta.ai video generation.
 
 Selector-driven on purpose. Meta will change their UI; when that happens,
 edit META_SELECTORS and the small set of helper functions rather than
@@ -12,6 +12,7 @@ import logging
 import random
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+
 from langsmith import traceable
 from playwright.async_api import (
     BrowserContext,
@@ -23,7 +24,6 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from app.config import settings
 from app.exceptions import ProviderSessionExpired, ProviderUIChanged
-
 
 logger = logging.getLogger(__name__)
 
@@ -164,44 +164,47 @@ async def _generate_one(context: BrowserContext, prompt: str, dest: Path) -> Non
         await page.close()
 
 
-@traceable(name="meta_ai.generate_clips", run_type="tool")
-async def generate_clips(
-    prompts: list[str],
-    clip_path_for: Callable[[int], Path],
-    progress_cb: Callable[[int], Awaitable[None]] | None = None,
-) -> list[Path]:
-    """Generate one clip per prompt, sequentially, in a single browser context.
+class MetaAIVideoProvider:
+    """VideoProvider adapter using a single Playwright browser context for
+    the lifetime of one batch."""
 
-    progress_cb (if provided) is awaited with the 1-indexed scene number
-    *before* each clip starts — so the DB can report "generating clip i/N".
-    """
-    if not settings.meta_storage_state.exists():
-        raise MetaSessionExpired(
-            f"{settings.meta_storage_state} not found. Run scripts/capture_session.py first."
-        )
+    name = "meta_ai"
 
-    out_paths: list[Path] = []
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=settings.playwright_headless)
-        context = await browser.new_context(
-            storage_state=str(settings.meta_storage_state),
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
-            ),
-        )
-        try:
-            for i, prompt in enumerate(prompts):
-                dest = clip_path_for(i)
-                logger.info("generating clip %d/%d -> %s", i + 1, len(prompts), dest)
-                if progress_cb:
-                    await progress_cb(i + 1)
-                await _generate_one(context, prompt, dest)
-                out_paths.append(dest)
-                await asyncio.sleep(random.uniform(8, 20))
-        finally:
-            await context.close()
-            await browser.close()
+    @traceable(name="meta_ai.generate_clips", run_type="tool")
+    async def generate_clips(
+        self,
+        prompts: list[str],
+        clip_path_for: Callable[[int], Path],
+        progress_cb: Callable[[int], Awaitable[None]] | None = None,
+    ) -> list[Path]:
+        if not settings.meta_storage_state.exists():
+            raise MetaSessionExpired(
+                f"{settings.meta_storage_state} not found. "
+                f"Run scripts/capture_session.py first."
+            )
 
-    return out_paths
+        out_paths: list[Path] = []
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=settings.playwright_headless)
+            context = await browser.new_context(
+                storage_state=str(settings.meta_storage_state),
+                viewport={"width": 1280, "height": 900},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+                ),
+            )
+            try:
+                for i, prompt in enumerate(prompts):
+                    dest = clip_path_for(i)
+                    logger.info("generating clip %d/%d -> %s", i + 1, len(prompts), dest)
+                    if progress_cb:
+                        await progress_cb(i + 1)
+                    await _generate_one(context, prompt, dest)
+                    out_paths.append(dest)
+                    await asyncio.sleep(random.uniform(8, 20))
+            finally:
+                await context.close()
+                await browser.close()
+
+        return out_paths
