@@ -1,6 +1,8 @@
 # n8n Setup — shorty-factory autonomous pipeline
 
-Daily-cron + Telegram + generic webhook ("openclaw" entry point) → shorty-factory `/jobs` → YouTube upload → Telegram notification.
+Daily-cron + generic webhook ("openclaw" entry point) → shorty-factory `/jobs` → YouTube upload → Telegram notification.
+
+> **Telegram triggers are skipped on purpose.** Telegram's Bot API requires an HTTPS webhook URL for inbound messages, which doesn't work cleanly with plain `http://localhost`. We trigger from the phone via the generic Webhook trigger instead (callable from any phone shortcut, IFTTT applet, externally-hosted Telegram bot, or plain curl). Telegram is still used for **outbound notifications** — outbound `sendMessage` calls work fine over plain HTTP.
 
 ## 1. Install and start n8n
 
@@ -13,13 +15,20 @@ docker run -d --name n8n --restart unless-stopped \
   -v n8n_data:/home/node/.n8n \
   -e GENERIC_TIMEZONE=Asia/Manila \
   -e TZ=Asia/Manila \
-  -e WEBHOOK_URL=http://host.docker.internal:5678/ \
+  -e N8N_HOST=localhost \
+  -e N8N_PORT=5678 \
+  -e N8N_PROTOCOL=http \
+  -e N8N_EDITOR_BASE_URL=http://localhost:5678/ \
+  -e WEBHOOK_URL=http://localhost:5678/ \
   n8nio/n8n
 ```
 
+The full set of `N8N_*` and `WEBHOOK_URL` env vars is set explicitly because different n8n versions read the OAuth callback URL from different ones. With all five aligned to `localhost:5678`, Google OAuth, browser callbacks, and webhook node URLs all agree.
+
 Notes:
-- `host.docker.internal` is how the n8n container reaches your host machine on Windows + Docker Desktop. shorty-factory runs on the host at `localhost:8000`; from inside the n8n container that's `http://host.docker.internal:8000`.
-- `WEBHOOK_URL` is what n8n advertises in the Webhook node's URL. It must be reachable by shorty-factory. With both on the same host, `http://host.docker.internal:5678/` works.
+- **`WEBHOOK_URL=http://localhost:5678/`** is what n8n advertises to the *browser* and to *OAuth providers* (Google, etc.). It must be `localhost`, not `host.docker.internal` — Google's OAuth validator only accepts `localhost` or public-TLD domains as redirect URIs. Browsers reach n8n via Docker's port mapping, so `localhost:5678` works fine.
+- **`host.docker.internal:8000` is for *server-to-server* calls** from inside the n8n container to shorty-factory on the host. You'll use it later in HTTP Request nodes (e.g. `POST http://host.docker.internal:8000/jobs`), but **not** in `WEBHOOK_URL`.
+- shorty-factory (running natively on the Windows host) reaches n8n at `localhost:5678` because Docker Desktop maps the published port.
 
 **Alternative: `npx n8n` (fast to try, no Docker).** Runs on `http://localhost:5678` directly. Use `http://localhost:8000` for shorty-factory and `http://localhost:5678/...` for webhook URLs. Trade-off: state lives in `~/.n8n` so don't `Ctrl-C` mid-workflow.
 
@@ -49,12 +58,14 @@ You'll attach this to a generic HTTP Request node, not an OpenAI node.
 
 Test-mode caveat: refresh tokens expire after 7 days while the OAuth app is in "Testing" status. Either submit for verification or accept weekly re-auths during the first month.
 
-### 2.3 Telegram bot
+### 2.3 Telegram bot (for outbound notifications only)
+
+We use Telegram **only to send success/error messages back to your chat** — not to trigger workflows. Outbound `sendMessage` works fine over plain HTTP, so no HTTPS tunnel needed.
 
 1. Talk to `@BotFather` on Telegram → `/newbot` → pick a name → it returns a bot token.
 2. Talk to your new bot once (`/start`) so it can DM you back.
 3. Get your chat ID: `https://api.telegram.org/bot<TOKEN>/getUpdates` after sending a message — find the `"chat":{"id": ...}` field.
-4. In n8n: **Credentials → New → Telegram API** → paste the bot token. Save the chat ID separately; you'll paste it into nodes.
+4. In n8n: **Credentials → New → Telegram API** → paste the bot token. Save the chat ID separately; you'll paste it into outbound notify nodes.
 
 ## 3. Build the workflow
 
@@ -62,7 +73,7 @@ Create a new workflow called `daily-short`. The shape is:
 
 ```
 [Schedule Trigger]┐
-[Telegram Trigger]┼─→ [Merge] → [Healthz Guard*] → [Idea LLM**] → [Set: JobCreate]
+                  ├─→ [Merge] → [Healthz Guard*] → [Idea LLM**] → [Set: JobCreate]
 [Webhook Trigger ]┘                                                       │
                                                                           ▼
                                                   [HTTP POST /jobs] → [Wait: Resume on Webhook]
@@ -80,8 +91,10 @@ Create a new workflow called `daily-short`. The shape is:
                                                           [Telegram: success notify]
 ```
 
-`*` Healthz Guard only runs for the cron path (skip if `ran_today=true`). Telegram and Webhook bypass it.
-`**` Idea LLM only runs if the trigger didn't supply an idea. Telegram and Webhook may pre-fill `idea`/`niche`.
+`*` Healthz Guard only runs for the cron path (skip if `ran_today=true`). The Webhook trigger bypasses it.
+`**` Idea LLM only runs if the trigger didn't supply an idea. Webhook callers may pre-fill `idea`/`niche` in the POST body.
+
+> **Why no Telegram Trigger?** Telegram requires HTTPS for inbound webhooks; we keep n8n on plain `http://localhost`. The Webhook trigger handles everything a Telegram trigger would — a phone-side bot, shortcut, or IFTTT applet POSTs to the webhook URL when you want to fire a job.
 
 ### 3.1 Triggers
 
