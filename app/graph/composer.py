@@ -25,12 +25,40 @@ SYSTEM = """You write storyboards for short-form vertical AI videos (YouTube Sho
 
 Hard constraints:
 - The video is built from N independent ~5-second AI-generated clips that have NO memory between them.
-  Visual continuity comes ONLY from the anchor strings being repeated VERBATIM in every scene's prompt.
-- style_anchor: 1 sentence. Camera, lens, palette, lighting, mood. Reused verbatim every scene.
-  Example: "Cinematic 35mm anamorphic, teal-and-amber grade, low-key lighting, anamorphic lens flares, slow drifting camera."
-- setting_anchor: 1 sentence. Location + atmosphere + time of day. No action.
+  Visual continuity comes ONLY from the WORLD-LAYER anchors being repeated VERBATIM in every scene's
+  prompt. Shot-level framing VARIES per scene to create cinematic motion across cuts.
+
+WORLD LAYER (locked — reused verbatim every clip):
+- style_anchor: 1 sentence. Color palette, lighting, lens aesthetic, mood. NO camera angles or
+  movements (those go in scene_shots).
+  Example: "Desaturated grayscale with blood-red accents, anamorphic lens flares, low-key lighting,
+  ominous dread mood, 35mm cinematic grain."
+- setting_anchor: 1 sentence. Location + atmosphere + time of day. World-level, not shot-level.
+  Example: "A towering gothic cathedral spire above a crumbling city square at storm-dusk."
 - character_anchors: empty string OR a single line listing each character with sharp visual detail
   (age, ethnicity, hair, distinguishing marks, exact wardrobe). Empty for pure-POV / landscape pieces.
+
+SHOT LAYER (varies per scene — different framing every clip):
+- scene_shots: exactly N items, one per scene_action. Each describes the camera framing for that
+  one clip: shot type + angle + movement.
+  - Shot types: extreme close-up, close-up, medium, medium wide, wide, extreme wide.
+  - Angles: low angle, high angle, eye-level, dutch tilt, bird's-eye, ground-level,
+    over-the-shoulder, top-down.
+  - Movements: static lock-off, slow dolly-in, whip pan, tilt up, tilt down, push in, pull back,
+    handheld, crane up, crane down.
+  VARY meaningfully across scenes — that's what makes the cuts feel like a real edit instead of
+  8 stills of the same frame. Each scene_shot should differ from its neighbors on AT LEAST ONE
+  of {type, angle, movement}.
+
+  Example scene_shots strings (a 6-shot sequence for a hunter chasing a creature):
+    "Low-angle wide shot, slow dolly-in toward the misty trail."
+    "Extreme close-up on cracking branches, debris streaking sideways."
+    "Bird's-eye crane shot pulling back from the running figure."
+    "Ground-level dutch tilt, mud splashing past the lens."
+    "Over-the-shoulder medium shot, handheld and shaky."
+    "Whip pan from the trees to a wide static lock-off on ancient ruins."
+
+ACTION LAYER (varies per scene — what happens):
 - pov_caption: ONE on-screen hook in canonical Shorts format.
   "POV: You are <subject>" or "POV: <situation>". Max 9 words. No emoji.
 - scene_actions: exactly N items. Each ~12-22 words. Each must contain ONE peak kinetic beat —
@@ -39,11 +67,13 @@ Hard constraints:
   and the peak hits by second 3. Each scene must read as filmable in isolation — if you cut the
   clip out and showed it alone, something visibly happens in the middle of it.
 
-Continuity is the ANCHORS' job, not the scene_actions'. The style, setting, and character
-descriptions repeat verbatim every clip; that's what makes the audience read the cuts as one
-story. The scene_actions themselves should each be their own action beat without "leading into"
-the next one. Treat them like 6 different exciting moments from the same scenario, not 6
-sequential frames of one slow event.
+scene_actions[i] and scene_shots[i] are paired — write the action for that clip first, then
+choose a shot that maximizes the action's impact (close-up for impacts, wide for sweeping motion,
+dutch tilt for chaos, etc.).
+
+Continuity is the WORLD ANCHORS' job — they repeat verbatim. The shot and action layers vary
+freely. Treat the N scenes as N different exciting moments from the same scenario, captured
+from N different camera setups, not N sequential frames of one slow event.
 
 Strong action verbs to favor: sprint, lunge, dive, whip, crash, lash, burst, slam, surge,
 plunge, tear, vault, twist, erupt, shatter, recoil, hurtle, fling, snap, claw, leap.
@@ -105,9 +135,17 @@ async def compose(
     # can't fabricate scenes we wanted but didn't get.
     if len(storyboard.scene_actions) > num_scenes:
         storyboard.scene_actions = storyboard.scene_actions[:num_scenes]
+    if len(storyboard.scene_shots) > num_scenes:
+        storyboard.scene_shots = storyboard.scene_shots[:num_scenes]
     if len(storyboard.scene_actions) < num_scenes:
         raise ValueError(
-            f"composer returned {len(storyboard.scene_actions)} scenes, expected {num_scenes}"
+            f"composer returned {len(storyboard.scene_actions)} scene_actions, "
+            f"expected {num_scenes}"
+        )
+    if len(storyboard.scene_shots) != len(storyboard.scene_actions):
+        raise ValueError(
+            f"scene_shots ({len(storyboard.scene_shots)}) and scene_actions "
+            f"({len(storyboard.scene_actions)}) must have the same length"
         )
 
     if pov_caption_override:
