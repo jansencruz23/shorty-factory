@@ -7,6 +7,7 @@ the ORM, and posts to the webhook (if any) on success/failure.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from functools import partial
 from typing import Any
@@ -19,6 +20,7 @@ from app.exceptions import classify_error
 from app.graph.graph import build_graph
 from app.graph.state import JobState
 from app.jobs import store
+from app.storage import paths_for
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +93,26 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
         result_url = f"{settings.public_base_url.rstrip('/')}/jobs/{job_id}/download"
         await store.update_progress(job_id, status="done", stage="done", result_url=result_url)
         if webhook_url:
-            await post_webhook(
-                webhook_url,
-                {"job_id": job_id, "status": "done", "result_url": result_url},
-            )
+            payload: dict[str, Any] = {
+                "job_id": job_id,
+                "status": "done",
+                "result_url": result_url,
+            }
+            # Attach LLM-crafted YouTube metadata so n8n's upload node can use
+            # it directly instead of falling back to the raw idea string.
+            # storyboard.json is written in node_compose, so it always exists
+            # at this point — but we read defensively in case of edge cases.
+            try:
+                sb_data = json.loads(
+                    paths_for(job_id).storyboard_json.read_text(encoding="utf-8")
+                )
+                if title := sb_data.get("youtube_title"):
+                    payload["youtube_title"] = title
+                if description := sb_data.get("youtube_description"):
+                    payload["youtube_description"] = description
+            except Exception as e:
+                logger.warning("could not read storyboard for webhook metadata: %s", e)
+            await post_webhook(webhook_url, payload)
 
     except Exception as e:
         logger.exception("[%s] job failed", job_id)

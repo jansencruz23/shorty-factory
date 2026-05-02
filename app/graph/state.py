@@ -28,6 +28,25 @@ class Storyboard(BaseModel):
         ...,
         description="The single on-screen hook, e.g. 'POV: You are an astronaut'",
     )
+    twist_premise: str = Field(
+        ...,
+        description="One sentence describing the reversal/reveal that the final scene "
+        "delivers. Should fundamentally change how the viewer reads the earlier scenes "
+        "after seeing the last clip. The composer uses this to plant foreshadowing in "
+        "scene_actions[0..N-2]. Not shown to the viewer — it's a story-design artifact.",
+    )
+    youtube_title: str = Field(
+        ...,
+        description="YouTube Shorts title, max 60 chars. Lead with the niche keyword "
+        "(Tikbalang, Aswang, etc.). Hint at the twist without spoiling. No ALL-CAPS, "
+        "no clickbait clichés, no excessive emoji.",
+    )
+    youtube_description: str = Field(
+        ...,
+        description="YouTube Shorts description. First sentence (≤140 chars) is the hook "
+        "for the algorithm preview. Then 1-2 short paragraphs expanding without spoiling "
+        "the twist. Last line: 3-5 niche-specific hashtags.",
+    )
     scene_actions: list[str] = Field(
         ...,
         description="Exactly N items. The peak kinetic beat for each ~5s clip — one strong "
