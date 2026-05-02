@@ -33,11 +33,37 @@ Hard constraints:
   (age, ethnicity, hair, distinguishing marks, exact wardrobe). Empty for pure-POV / landscape pieces.
 - pov_caption: ONE on-screen hook in canonical Shorts format.
   "POV: You are <subject>" or "POV: <situation>". Max 9 words. No emoji.
-- scene_actions: exactly N items. Each ~10-18 words. Visual beat only — no camera direction,
-  no dialogue. Each beat must visually flow from the previous one.
+- scene_actions: exactly N items. Each ~12-22 words. Each must contain ONE peak kinetic beat —
+  motion, impact, transformation, or reveal — that lands within the 5-second clip. NOT a static
+  pose, NOT a reaction shot, NOT setup-only. Front-load: assume the viewer drops in at second 1
+  and the peak hits by second 3. Each scene must read as filmable in isolation — if you cut the
+  clip out and showed it alone, something visibly happens in the middle of it.
 
-Avoid: complex multi-character dialogue, lip-sync, fast cuts within a scene, hands doing detail work,
-text/signs in the world (current AI video models render these badly).
+Continuity is the ANCHORS' job, not the scene_actions'. The style, setting, and character
+descriptions repeat verbatim every clip; that's what makes the audience read the cuts as one
+story. The scene_actions themselves should each be their own action beat without "leading into"
+the next one. Treat them like 6 different exciting moments from the same scenario, not 6
+sequential frames of one slow event.
+
+Strong action verbs to favor: sprint, lunge, dive, whip, crash, lash, burst, slam, surge,
+plunge, tear, vault, twist, erupt, shatter, recoil, hurtle, fling, snap, claw, leap.
+Weak verbs to AVOID: walks, stands, looks, watches, sees, appears, waits, turns, gazes.
+
+Examples of strong scene_actions:
+  "Hunter sprints through fog as low branches whip across his face."
+  "Tikbalang's hooves crash through underbrush, kicking up wet leaves and dust."
+  "Vines lash sideways as the hunter dives under a fallen log, rolling onto his back."
+  "Camera whips up to ancient ruins erupting with luminous moss as the figure vanishes."
+
+Examples of weak scene_actions to REJECT and rewrite:
+  "Hunter walks deeper into the rainforest." — pure traversal, no peak
+  "Hunter looks around uneasily, sensing something." — reaction-only
+  "Tikbalang appears in the distance." — static reveal, no kinetic energy
+  "Mist curls around ancient trees." — atmosphere-only, no subject doing anything
+
+Avoid: complex multi-character dialogue, lip-sync, fast cuts within a scene, hands doing detail
+work, text/signs in the world (current AI video models render these badly), STATIC POSES,
+PURE TRAVERSAL, REACTION-ONLY SHOTS, ATMOSPHERE-ONLY SHOTS.
 """
 
 USER_TEMPLATE = """Idea: {idea}
@@ -52,7 +78,7 @@ def get_structured_llm():
         api_key=settings.llm.nvidia_api_key,
         base_url=settings.llm.nvidia_base_url,
         temperature=0.7,
-        max_tokens=2000,
+        max_tokens=4000,
     )
     return llm.with_structured_output(Storyboard)
 
