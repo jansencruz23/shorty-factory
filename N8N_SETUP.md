@@ -103,17 +103,6 @@ Create a new workflow called `daily-short`. The shape is:
 - Hour: pick a time you reliably have your machine on (e.g. 09:00).
 - Output: empty payload — the LLM step generates the idea.
 
-#### Telegram Trigger
-- Credential: your Telegram bot.
-- Updates: `message`.
-- Additional Fields → Restrict to chat IDs: paste your chat ID so randoms can't fire it.
-- The output's `message.text` looks like `/short some optional idea`. Parse it in the next node.
-
-Add a **Set** node right after, only on the Telegram branch, named `Parse Telegram`:
-- Mode: Manual mapping → Add value of type `String` named `idea`, expression: `{{ $json.message.text.replace(/^\/short\s*/, '') || '' }}` — empty string falls through to the LLM.
-- Add `niche` = `''` (Telegram triggers don't currently specify niche; LLM picks).
-- Add `_chat_id` = `{{ $json.message.chat.id }}` so the success notification replies to the same chat.
-
 #### Webhook Trigger
 - HTTP Method: `POST`
 - Path: `short`
@@ -125,7 +114,7 @@ Tell whatever "openclaw" turns out to be to POST to `http://your-host:5678/webho
 
 ### 3.2 Merge
 
-A **Merge** node, mode: **Append** (or **Combine → Append**), with three inputs (one per trigger). All three branches now feed the same downstream pipeline.
+A **Merge** node, mode: **Append** (or **Combine → Append**), with **two inputs** — one for the Schedule branch (after the Healthz guard), one for the Webhook branch. Both feed the same downstream pipeline.
 
 ### 3.3 Healthz guard (cron-only)
 
@@ -144,7 +133,7 @@ Concretely:
 - Branch true → continues to Merge.
 - Branch false → ends silently (no notification — cron skip is normal).
 
-(Telegram and Webhook branches go directly to Merge; they always run.)
+(The Webhook branch goes directly to Merge; on-demand triggers always run regardless of `ran_today`.)
 
 ### 3.4 Idea LLM (skip when trigger supplied one)
 
@@ -153,24 +142,51 @@ After Merge, an **IF** node `Has idea?`:
 - True branch: skip LLM, go to `Set: JobCreate`.
 - False branch: call NVIDIA.
 
+**Recommended pattern: pre-pick the niche deterministically in n8n, then ask the LLM only for the idea.** This avoids the LLM hallucinating niches that don't exist in your `PROMPT_FOR_NICHE` map and gives you control over rotation. Add a **Code** node `Pick niche` *before* the Generate idea node:
+
+```javascript
+// Single source of truth for your channel's niches. Add new ones here whenever
+// you expand. Each must also have a matching entry in app/providers/music/musicgen.py
+// PROMPT_FOR_NICHE so MusicGen produces niche-appropriate music.
+const niches = [
+  "filipino-mythology",
+  // "liminal-dread",
+  // "sleep-paralysis",
+];
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+return [{ json: { niche: pick(niches) } }];
+```
+
 False-branch node: **HTTP Request** named `Generate idea`:
 - Method: POST
 - URL: `https://integrate.api.nvidia.com/v1/chat/completions`
 - Auth: NVIDIA Build credential.
 - Headers: `Content-Type: application/json`
-- Body (JSON):
+- Body (JSON) — note the LLM only generates `idea`; niche comes from the Code node above:
   ```json
   {
     "model": "meta/llama-3.3-70b-instruct",
     "messages": [
-      {"role": "system", "content": "You write one-line video ideas for a short-form vertical AI shorts channel. Respond with strict JSON: {\"idea\": \"...\", \"niche\": \"filipino-mythology|cosmic-horror|cinematic\"}. The idea is a single declarative sentence describing a visual scene. The niche must be one of the three values."},
-      {"role": "user", "content": "Generate today's idea. Vary the niche from previous days."}
+      {
+        "role": "system",
+        "content": "You write one-line video ideas for a short-form vertical AI shorts channel. Respond with STRICT JSON: {\"idea\": \"...\"}. The idea is a single declarative sentence describing a visual scene appropriate to the niche specified in the user message. No other fields."
+      },
+      {
+        "role": "user",
+        "content": "Niche: {{ $('Pick niche').item.json.niche }}\n\nGenerate today's idea for this niche."
+      }
     ],
     "temperature": 0.9,
     "response_format": {"type": "json_object"}
   }
   ```
-- After this node, a **Set** node parses `choices[0].message.content` as JSON and pulls out `idea` and `niche`.
+- After this node, a **Set** node parses `choices[0].message.content` as JSON, pulls out `idea`, and merges in the `niche` from the `Pick niche` node so both flow downstream together.
+
+**Why split it this way?** Pre-picking the niche means:
+1. You can extend your channel by editing one array (no prompt changes needed).
+2. The LLM can't pick a niche that has no MusicGen mapping (which would silently fall back to default ambient music).
+3. You can add deterministic rotation later — e.g. day-of-week themes — by replacing `pick(arr)` with a calendar-based selector.
 
 ### 3.5 Set: JobCreate body
 
@@ -178,8 +194,9 @@ A **Set** node `Build JobCreate`:
 - `idea`: `{{ $json.idea }}`
 - `niche`: `{{ $json.niche }}`
 - `num_scenes`: `4` (or `{{ $json.num_scenes ?? 4 }}` if the webhook supplied one)
-- `webhook_url`: `{{ $env.WEBHOOK_URL }}webhook/shorty-done/{{ $execution.id }}` — every workflow execution gets a unique callback URL.
-- Pass through `_chat_id` from the Telegram branch if present.
+- `webhook_url`: `http://localhost:5678/webhook/shorty-done/{{ $execution.id }}`
+
+The `webhook_url` is hardcoded `localhost:5678` (not `$env.WEBHOOK_URL`) because n8n's `$env` access is blocked by default for security and we don't need indirection — the URL is stable for your local-Docker setup. shorty-factory (running on the host) reaches `localhost:5678` via Docker's port mapping.
 
 ### 3.6 POST /jobs
 
@@ -194,11 +211,35 @@ A **Set** node `Build JobCreate`:
 
 A **Wait** node:
 - Resume: **On Webhook Call**
-- Path: `shorty-done/{{ $execution.id }}` — must match the path in `webhook_url` from step 3.5.
 - HTTP Method: POST
-- Resume timeout: 4 hours (so a hung meta.ai run doesn't pin the workflow forever).
+- Resume timeout: 4 hours (so a hung meta.ai run doesn't pin the workflow forever — bump higher if first MusicGen download still hasn't run).
 
-shorty-factory's `runner.post_webhook` will POST `{job_id, status, result_url|error}` to this URL when the job finishes.
+The Wait node auto-generates the resume URL at runtime; you reference it as `{{ $execution.resumeUrl }}` in the **Build JobCreate** node above (step 3.5). When shorty-factory POSTs back, n8n matches the URL to this Wait node and resumes the workflow.
+
+**Webhook payload shape** (what `$json` contains after resume):
+
+On success:
+```json
+{
+  "job_id": "abc123def456",
+  "status": "done",
+  "result_url": "/jobs/abc123def456/download",
+  "youtube_title": "The Tikbalang Hunter's Last Mistake",
+  "youtube_description": "Deep in the rainforest, a hunter pursues a creature said to vanish...\n\n#FilipinoMythology #Tikbalang #Folklore #Shorts"
+}
+```
+
+On failure:
+```json
+{
+  "job_id": "abc123def456",
+  "status": "error",
+  "error": "MetaSessionExpired: meta.ai shows a login wall",
+  "error_type": "session_expired"
+}
+```
+
+`error_type` lets you route the error notification by cause — see step 3.12.
 
 ### 3.8 IF status==done
 
@@ -224,67 +265,183 @@ Then n8n can fetch the result_url directly.
 - Response: **File / Binary**
 - Output binary field: `final`
 
-### 3.10 YouTube upload
+### 3.10 YouTube upload — step-by-step
 
-**YouTube** node, action **Upload Video**:
-- Credential: your YouTube OAuth2 credential
-- Title: `{{ $('Build JobCreate').item.json.idea | truncate(95) }}` — YouTube title cap is 100 chars.
-- Description: `{{ $('Build JobCreate').item.json.idea }}\n\nGenerated by shorty-factory.` (no AI-disclosure stanza; per your decision)
-- Privacy Status: `public` (per your decision)
-- Made For Kids: `false`
-- Tags: comma-separated from the niche.
-- Binary Property: `final`
-- Notify Subscribers: your call.
+shorty-factory's composer LLM produces three pieces of YouTube-ready metadata in the webhook payload (step 3.7): `youtube_title`, `youtube_description`, and `youtube_tags`. The steps below paste each one into the right slot in n8n's YouTube node.
 
-(If you decide to flip on AI disclosure later, expand "Additional Fields" → look for "Contains Synthetic Media" / "Self Declared Made For Kids". The exact field name on the YouTube node depends on n8n version. If absent, replace this node with a raw **HTTP Request** to `POST https://www.googleapis.com/youtube/v3/videos?part=status` after the upload to set `status.containsSyntheticMedia = true`.)
+**Step 1 — Add the node.**
+On the canvas, after the `Download final` node (step 3.9), click `+` → search "YouTube" → pick **YouTube** (the official integration).
+
+**Step 2 — Pick the action.**
+- **Resource**: `Video`
+- **Operation**: `Upload`
+- **Credential**: select the YouTube OAuth2 credential from §2.2.
+
+**Step 3 — Top-level fields** (visible immediately after picking the operation):
+
+| n8n field | Paste expression | Notes |
+|---|---|---|
+| **Title** | `{{ $json.youtube_title \|\| $('Build JobCreate').item.json.idea }}` | LLM-crafted; raw idea as fallback. Composer caps at 60 chars (under YouTube's 100 limit). |
+| **Region Code** | `US` (or your audience's region) | Determines algorithm-classification region. |
+| **Category Id** | `24` | Entertainment — the right bucket for horror / mythology / fictional shorts. |
+| **Binary Property** | `final` | Must match the `Output binary field` set in the Download node (step 3.9). |
+
+**Step 4 — Toggle "Additional Fields" open** (the collapsible section below the top-level fields). This is where Tags, Description, and the privacy/policy flags live.
+
+Click "Add Field" and add each of these one at a time:
+
+| Additional field | Paste expression | Notes |
+|---|---|---|
+| **Description** | `{{ $json.youtube_description \|\| $('Build JobCreate').item.json.idea }}` | LLM-crafted; already contains niche hashtags. |
+| **Tags** | `{{ ($json.youtube_tags \|\| ['shorts', 'pov']).join(', ') }}` | LLM-generated tag array, joined with commas. *(See note below if n8n shows you a different input shape.)* |
+| **Privacy Status** | `public` | Or `private` while you're still testing. |
+| **Made For Kids** | `false` | Required for any non-children's-content channel. |
+| **Notify Subscribers** | `true` | Or `false` for test runs. |
+
+**About the Tags field shape**: n8n's YouTube node version varies on whether `Tags` accepts a comma-separated string or a string array.
+
+- If the field is a **single text input** (most versions): paste the `.join(', ')` expression above. It produces `"filipino mythology, tikbalang, horror short, ..."`.
+- If the field shows up as an **"Add Tag" button** (multi-value list): drop the `.join(', ')` and paste:
+  ```
+  {{ $json.youtube_tags || ['shorts', 'pov'] }}
+  ```
+  n8n will treat the expression as the array and bind each element as a separate tag.
+
+You can tell which variant you have by clicking on the field — text input vs. an "Add Tag" repeater button. Both work; just match the expression shape.
+
+**Step 5 — Verify.**
+After saving the node, click "Execute Step" *only after* an upstream Wait node has resumed with a real `$json` payload (i.e., trigger an actual end-to-end run). The node panel will show the upload's video ID and URL on success.
+
+**About tags vs description hashtags** — these are *different YouTube fields*:
+
+- **Tags** (the metadata field you just configured) — no `#` prefix, lowercase, comma-separated. Used by YouTube's algorithm to classify and recommend; **not visible** to viewers.
+- **Hashtags** (embedded in the description, start with `#`) — visible, clickable. The composer already appends 3-5 of these to `youtube_description` automatically.
+
+Both layers help SEO; they're complementary, not redundant. Don't worry about duplicating tags into the description as hashtags — the composer handles each layer separately and the algorithm reads them differently.
+
+**AI disclosure (off by default; flip if a niche drifts realistic)**:
+
+YouTube's "altered or synthetic content" policy targets *realistic* AI content that could mislead. Stylized fictional shorts (mythology, horror) sit outside the policy, so the disclosure flag is **off by default** in this guide.
+
+If you ever need to flip it on — e.g. you start producing realistic AI footage of real-looking people or events — the YouTube node may not expose the field directly. In that case, add an extra **HTTP Request** node after the upload:
+
+- Method: PUT
+- URL: `https://www.googleapis.com/youtube/v3/videos?part=status`
+- Auth: same YouTube OAuth2 credential
+- Body (JSON):
+  ```json
+  {
+    "id": "{{ $json.id }}",
+    "status": {
+      "containsSyntheticMedia": true
+    }
+  }
+  ```
+
+This patches the `containsSyntheticMedia` flag on the just-uploaded video. The exact field name evolves; verify against the [current YouTube Data API v3 docs](https://developers.google.com/youtube/v3/docs/videos) at implementation time.
+
+**Custom thumbnails (optional, deferred)**:
+
+YouTube auto-generates thumbnails from your video frames. For more control, you can upload a custom thumbnail via the [thumbnails.set endpoint](https://developers.google.com/youtube/v3/docs/thumbnails/set) — but n8n's YouTube node doesn't natively expose this. If you want custom thumbnails later, generate them with another HTTP Request node calling `POST https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=<id>`. Thumbnails are huge for CTR but low priority for v1; stick with auto-generated until you have ~50 uploads to compare.
 
 ### 3.11 Notify success
 
 **Telegram** node `Notify success`:
-- Credential: Telegram bot
-- Chat ID: `{{ $('Build JobCreate').item.json._chat_id ?? 'YOUR_DEFAULT_CHAT_ID' }}` — replies to the Telegram triggerer if the workflow was started by Telegram, otherwise hits your default ops chat.
-- Text: `✅ {{ $('Build JobCreate').item.json.idea }}\nhttps://www.youtube.com/watch?v={{ $('YouTube').item.json.id }}`
+- Credential: Telegram bot (from §2.3)
+- Chat ID: your default ops chat ID (saved in §2.3, step 3)
+- Text:
+  ```
+  ✅ {{ $json.youtube_title || $('Build JobCreate').item.json.idea }}
+  https://www.youtube.com/watch?v={{ $('YouTube').item.json.id }}
+  ```
+
+The notification reaches your phone within a few seconds of the upload completing. Tap the link to review the live video — flip to private from YouTube Studio if it looks bad.
 
 ### 3.12 Error path
 
-A **Telegram** node on the IF false branch:
-- Text: `❌ Job {{ $json.job_id }} failed at {{ $json.stage ?? 'unknown' }}: {{ $json.error }}`
-- Chat ID: same default ops chat.
+A **Telegram** node on the IF=false branch (from step 3.8):
+- Chat ID: your default ops chat
+- Text:
+  ```
+  ❌ Job {{ $json.job_id }} failed
+  Type: {{ $json.error_type }}
+  Error: {{ $json.error }}
+  ```
 
-Also attach an **Error Trigger** node to the workflow (separate sub-flow that fires on any unhandled error) → Telegram with the workflow name and stack.
+The `error_type` field gives you a stable token to route on. Common values:
+
+| `error_type` | What it means | What to do |
+|---|---|---|
+| `session_expired` | meta.ai cookie invalid | Re-run `scripts/capture_session.py` from your Windows host |
+| `rate_limited` | Provider throttled | Wait it out; the next cron run will retry |
+| `ui_changed` | Selector didn't match | Edit `META_SELECTORS` in [app/providers/video/meta_ai.py](app/providers/video/meta_ai.py) |
+| `quota_exceeded` | Daily quota hit | Wait for the quota window to reset |
+| `pipeline` | ffmpeg / IO failure | Check shorty-factory logs |
+| `config` | Missing asset / font | Fix env or assets/ |
+| `orphaned` | uvicorn restarted mid-job | Cosmetic; ignore unless frequent |
+| `unknown` | Anything else | Investigate via LangSmith trace |
+
+If you want differentiated notifications (e.g. session_expired pings a "fix me" chat, rate_limited pings nothing), branch on `{{ $json.error_type }}` with multiple IF nodes.
+
+Also attach an **Error Trigger** node to the workflow (separate sub-flow that fires on any unhandled n8n exception, not just shorty-factory errors) → Telegram with the workflow name and stack.
 
 ## 4. First-run testing
 
-Run each trigger path once, in this order:
+Test each trigger path before activating. **Activate the workflow first** — the Wait/Resume node only persists across editor sessions when the workflow is Active (in editor-only "Execute Workflow" mode it dies if you close the tab, leading to spurious 409 callbacks from shorty-factory).
 
-### 4.1 Schedule Trigger
-In the editor, "Execute Node" on the Schedule Trigger. Walk through each node in the canvas, verifying outputs at each step. Make sure the YouTube upload lands on your channel (private at first if you want extra caution; per your plan it's public).
+### 4.1 Webhook Trigger (fastest test)
 
-### 4.2 Telegram Trigger
-Send `/short an astronaut sees something impossible` to your bot. The same workflow run should fire. Verify the Telegram chat gets a success message with the YouTube URL.
-
-### 4.3 Webhook Trigger
-```bash
-curl -X POST http://localhost:5678/webhook/short \
-  -H "X-Trigger-Token: YOUR_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"idea":"a Hello Kitty that scares children","niche":"cosmic-horror","num_scenes":4}'
+```cmd
+curl -X POST http://localhost:5678/webhook/short ^
+  -H "X-Trigger-Token: YOUR_SECRET" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"idea\":\"a Tikbalang lures you into the rainforest at dusk\",\"niche\":\"filipino-mythology\",\"num_scenes\":4}"
 ```
 
-The HTTP response (because Webhook responseMode = "When last node finishes") should be the YouTube ID/URL.
+(`^` is the cmd line-continuation; use `\` on bash.)
 
-### 4.4 Concurrency check
-Fire Schedule and Telegram in quick succession. The second one should hit shorty-factory's `429` (single-flight guard) and the workflow should fail at the Create-job step with a "Continue On Fail" branch — verify the error Telegram fires correctly.
+What to verify:
+- The HTTP response (because Webhook responseMode = "When last node finishes") returns the YouTube video ID.
+- The video appears on your channel as Public.
+- Title and description match what's in the corresponding `outputs/<job_id>/storyboard.json` (`youtube_title`, `youtube_description`).
+- Telegram success message arrives.
+
+### 4.2 Schedule Trigger
+
+Temporarily change the Schedule cron to a near-future time (e.g. 2 minutes from now), wait for it to fire, then revert to your daily time (e.g. 09:00). Verify the same end-to-end flow as 4.1.
+
+### 4.3 Healthz guard
+
+After 4.2 runs successfully, change the cron to fire again immediately. The workflow should hit `/healthz`, see `ran_today=true`, and silently exit without creating a duplicate video. Confirm no second YouTube upload appears.
+
+### 4.4 Concurrency / single-flight check
+
+While a job is in-flight (visible in the n8n Executions tab as "Waiting"), fire the Webhook trigger again. shorty-factory should return HTTP 429 ("another job is currently queued or running"). Your workflow's Create-job HTTP Request node should hit its "Continue On Fail" branch and route to the Telegram error notification with `error_type` showing 429-related text.
+
+### 4.5 Error-type routing (optional but useful)
+
+Temporarily rename `storage_state.json` to break meta.ai auth. Trigger any path. Verify:
+- Job fails with `error_type: session_expired`.
+- Telegram error message includes the type token.
+- Restore `storage_state.json` and re-test to confirm recovery.
 
 ## 5. Going live
 
 1. Activate the workflow (toggle in top-right).
 2. Watch the first ~3 cron-fired uploads on your channel and in LangSmith. Confirm:
    - YouTube videos are public, no AI disclosure
+   - **Title and description match `youtube_title` / `youtube_description` from the storyboard.json** — not the raw idea
+   - Hashtags appear at the bottom of the description (composer-generated)
    - Music is MusicGen-generated (no Content ID claims)
    - LangSmith trace shows `compose → generate → stitch → music` end-to-end
-   - Telegram success messages arrive
-3. After ~10 successful uploads, you can stop watching the dashboard daily.
+   - Telegram success messages arrive with the actual title
+
+3. **YouTube Studio review** for the first batch:
+   - Look at YouTube's auto-detected category — does it match what you set in the upload node? Adjust if needed.
+   - Check the auto-generated thumbnail. If it's bad, consider adding a thumbnail-set HTTP Request node later.
+   - Watch the audience-retention curve: if drop-off is at second 1, your title/description aren't selling the hook; if at second 5+, the video itself isn't holding attention.
+
+4. After ~10 successful uploads, you can stop watching the dashboard daily. Set up a weekly check-in: scroll your YouTube Studio for any policy/Content-ID flags, glance at LangSmith for failures.
 
 ## 6. Recurring chores
 

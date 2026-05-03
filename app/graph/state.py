@@ -21,8 +21,10 @@ class Storyboard(BaseModel):
     )
     character_anchors: str = Field(
         default="",
-        description="Detailed character descriptions, comma-joined. Reused verbatim every "
-        "scene. Empty string for pure-POV/landscape pieces.",
+        description="Detailed character descriptions, comma-joined: age, ethnicity, hair, "
+        "distinguishing marks, exact wardrobe, weapon. Reused verbatim every scene so "
+        "meta.ai produces a visually-consistent character across cuts. Empty string for "
+        "pure-landscape pieces or when no character should appear.",
     )
     pov_caption: str = Field(
         ...,
@@ -46,6 +48,14 @@ class Storyboard(BaseModel):
         description="YouTube Shorts description. First sentence (≤140 chars) is the hook "
         "for the algorithm preview. Then 1-2 short paragraphs expanding without spoiling "
         "the twist. Last line: 3-5 niche-specific hashtags.",
+    )
+    youtube_tags: list[str] = Field(
+        ...,
+        description="YouTube tags (metadata layer, separate from description hashtags). "
+        "8-12 items, NO '#' prefix, lowercase preferred. Mix broad niche keywords "
+        "(e.g. 'filipino mythology', 'folklore'), creature/topic-specific terms (e.g. "
+        "'tikbalang', 'aswang'), and format keywords ('shorts', 'pov', 'horror short'). "
+        "Total joined-by-commas length must stay under 500 chars (YouTube's hard cap).",
     )
     scene_actions: list[str] = Field(
         ...,
