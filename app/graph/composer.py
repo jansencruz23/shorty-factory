@@ -202,7 +202,7 @@ def get_structured_llm():
         api_key=settings.llm.nvidia_api_key,
         base_url=settings.llm.nvidia_base_url,
         temperature=0.7,
-        max_tokens=8000,
+        max_tokens=16000,
     )
     return llm.with_structured_output(Storyboard)
 
