@@ -110,6 +110,8 @@ async def run_job(job_id: str, initial_state: JobState, webhook_url: str | None)
                     payload["youtube_title"] = title
                 if description := sb_data.get("youtube_description"):
                     payload["youtube_description"] = description
+                if tags := sb_data.get("youtube_tags"):
+                    payload["youtube_tags"] = tags
             except Exception as e:
                 logger.warning("could not read storyboard for webhook metadata: %s", e)
             await post_webhook(webhook_url, payload)

@@ -28,14 +28,6 @@ Hard constraints:
   Visual continuity comes ONLY from the WORLD-LAYER anchors being repeated VERBATIM in every scene's
   prompt. Shot-level framing VARIES per scene to create cinematic motion across cuts.
 
-FIRST-PERSON POV (mandatory): the camera IS the protagonist's eyes. Every scene is what
-they see. The protagonist's own body parts (hands, arms, weapon, boots, breath fogging the
-lens) appear in the frame when natural — that's what sells the "POV: You are X" experience.
-NEVER write scenes from outside the protagonist (no "Hunter sprints" — instead "Boots crash
-into view as fog rushes past the lens"). character_anchors describes how the protagonist's
-visible body parts look (e.g. "Brown calloused hands, worn leather sleeves, machete in right
-hand"), NOT a third-person portrait.
-
 WORLD LAYER (locked — reused verbatim every clip):
 - style_anchor: 1 sentence. Color palette, lighting, lens aesthetic, mood. NO camera angles or
   movements (those go in scene_shots).
@@ -43,30 +35,32 @@ WORLD LAYER (locked — reused verbatim every clip):
   ominous dread mood, 35mm cinematic grain."
 - setting_anchor: 1 sentence. Location + atmosphere + time of day. World-level, not shot-level.
   Example: "A towering gothic cathedral spire above a crumbling city square at storm-dusk."
-- character_anchors: describe the protagonist's VISIBLE body parts/clothing as the camera
-  sees them: hands, sleeves, weapon, boots. E.g. "Tan calloused hands, frayed leather sleeves,
-  bolo knife in right grip, mud-caked boots". For pure-environment POVs (no body visible) use
-  empty string.
+- character_anchors: empty string OR a single line listing each character with sharp visual
+  detail (age, ethnicity, hair, distinguishing marks, exact wardrobe, weapon). Repeated
+  verbatim every clip so meta.ai produces visually-coherent characters across cuts. Empty
+  for pure-landscape pieces.
 
-SHOT LAYER (varies per scene — different framing every clip, all FIRST-PERSON):
-- scene_shots: exactly N items, one per scene_action. Each describes the FIRST-PERSON camera
-  framing for that clip: framing/lens + head/body movement + what the camera (eyes) is doing.
-  - Lens/framing: wide-angle POV, normal POV, telephoto POV, extreme close-up POV, GoPro chest-mount.
-  - Head/eye movement: looking down at hands, looking up at canopy, breathless head-bob,
-    rapid head-turn, slow scan, tilt up from boots, tilt down to ground.
-  - Body/motion: handheld run, sprint cam, stumbling forward, frozen still, crouching low,
-    falling backward, kneeling.
-  VARY meaningfully across scenes — that's what makes cuts feel like a real edit instead of
-  8 stills of the same frame. Each scene_shot should differ from its neighbors on AT LEAST ONE
-  of {framing, eye-movement, body-motion}.
+SHOT LAYER (varies per scene — different framing every clip):
+- scene_shots: exactly N items, one per scene_action. Each describes the camera framing for
+  that one clip: shot type + angle + movement. Choose whatever perspective best sells the
+  action — wide establishing, tight close-up, over-the-shoulder, first-person POV, bird's-eye,
+  whatever fits. Mix perspectives to create cinematic variety; don't lock into one framing.
+  - Shot types: extreme close-up, close-up, medium, medium wide, wide, extreme wide, POV.
+  - Angles: low angle, high angle, eye-level, dutch tilt, bird's-eye, ground-level,
+    over-the-shoulder, top-down, first-person.
+  - Movements: static lock-off, slow dolly-in, whip pan, tilt up, tilt down, push in, pull
+    back, handheld, crane up, crane down, head-bob (for first-person).
+  VARY meaningfully across scenes — that's what makes the cuts feel like a real edit instead
+  of 8 stills of the same frame. Each scene_shot should differ from its neighbors on AT LEAST
+  ONE of {type, angle, movement}.
 
-  Example scene_shots strings (a 6-shot first-person sequence for a hunter chase):
-    "First-person wide-angle POV, breathless head-bob, sprint cam through dense fog."
-    "POV looking down at hands gripping a machete, knuckles white, slight tremor."
-    "Helmet-cam POV, sudden whip-tilt up from boots to the canopy."
-    "First-person crouching low POV, slow scan left across the underbrush."
-    "POV stumbling forward, lens dipping toward muddy ground, then whipping up."
-    "Frozen still POV, eyes locked on a figure ahead, breath fogging the lens."
+  Example scene_shots (a 6-shot sequence for a hunter chase, mixing perspectives):
+    "Low-angle wide shot, slow dolly-in toward the misty trail."
+    "Extreme close-up on cracking branches, debris streaking sideways."
+    "Bird's-eye crane shot pulling back from the running figure."
+    "First-person POV, breathless head-bob, sprint through fog."
+    "Over-the-shoulder medium shot, handheld and shaky."
+    "Whip pan from the trees to a wide static lock-off on ancient ruins."
 
 ACTION LAYER (varies per scene — what happens):
 - pov_caption: the on-screen hook that stops the scroll. Max 12 words including "POV:". No
@@ -156,20 +150,19 @@ Foreshadowing rules:
   something (a reflection, an item, a glance) that hints at what's coming.
 - The TWIST scene should be the foreshadowed thing made undeniable.
 
-STRONG full example (4 scenes, Tikbalang, FIRST-PERSON, with twist):
-  character_anchors: "Tan calloused hands, frayed leather sleeves, bolo knife gripped in right hand, mud-streaked boots."
+STRONG full example (4 scenes, Tikbalang, with twist):
+  character_anchors: "Filipino hunter, late 20s, lean build, short black hair, mud-streaked face, frayed leather jacket, bolo knife in right hand, worn boots."
   twist_premise: "The hunter is the Tikbalang in human disguise — luring his future self into a fatal loop."
-  Scene 1 (HOOK):     "Bolo blade swings into view, hacking branches as fog rushes past — your own shadow on the moss has hooves."
-  Scene 2 (INCITING): "A second figure crashes from the treeline ahead — same machete, same frayed sleeve — but horse-legs below the waist."
-  Scene 3 (CLIMAX):   "Your blade rises as the creature stops short — its eyes meet yours, and it smiles in recognition."
-  Scene 4 (TWIST):    "You glance down at your own legs — fur bristles outward, hooves crack through your boots."
+  Scene 1 (HOOK):     "Hunter sprints through fog, machete hacking branches — his shadow on the moss has hooves."
+  Scene 2 (INCITING): "A second figure crashes from the treeline, same face, same machete, but horse-legs below the waist."
+  Scene 3 (CLIMAX):   "The hunter raises his blade as the creature stops short — they lock eyes and the creature smiles in recognition."
+  Scene 4 (TWIST):    "The hunter glances down at his own legs as fur bristles outward, hooves cracking through his boots."
 
 Why this works:
-- Every scene is filmed from inside the protagonist's eyes — boots, hands, blade are visible.
-- Scene 1's shadow seed is glimpsed at the protagonist's own feet.
-- Scene 2's "same sleeve" should feel uncanny but viewers attribute it to creature mimicry.
-- Scene 3's "smiles in recognition" is the bridge — why is it smiling at YOU?
-- Scene 4's reveal is undeniable because the camera is the protagonist's eyes looking down at their own transformation.
+- Scene 1's shadow seed is a detail viewers probably miss on first watch.
+- Scene 2's "same face" feels uncanny but the viewer attributes it to creature mimicry.
+- Scene 3's "smiles in recognition" is the bridge moment — why is it smiling at him?
+- Scene 4's reveal is undeniable; on rewatch every prior scene has new meaning.
 
 WEAK examples to AVOID:
   - Surprise without setup: scenes 1-3 are a normal chase, scene 4 is "and then a meteor hits."
@@ -217,32 +210,53 @@ Example description (Tikbalang twist video):
 
   #FilipinoMythology #Tikbalang #Folklore #FilipinoFolklore #Shorts"
 
-Hashtag patterns by niche:
-  filipino-mythology: #FilipinoMythology #Folklore #FilipinoFolklore #<creature> #Shorts
-  cosmic-horror: #CosmicHorror #Lovecraftian #LiminalSpace #DreadCore #Shorts
-  cinematic: #Cinematic #ShortFilm #AIArt #Atmospheric #Shorts
+Hashtag pattern (used in description) — derive from the niche supplied in the user message:
+- Convert the niche to PascalCase as the primary hashtag (e.g. niche="filipino-mythology" → #FilipinoMythology, niche="liminal-dread" → #LiminalDread, niche="sleep-paralysis" → #SleepParalysis).
+- Add 2-3 closely related hashtags appropriate to that niche (related genres, parent categories, audience subcultures).
+- Add the topic-specific hashtag if there's a named creature/concept in the scenes (e.g. #Tikbalang, #Aswang).
+- Always end with #Shorts.
+- Output 3-5 total. NO hardcoded niche names — read the actual niche from the user message and adapt.
+
+Example derivations (illustrative, NOT an exhaustive niche list):
+  niche="filipino-mythology", creature="Tikbalang"  → #FilipinoMythology #Folklore #PhilippineFolklore #Tikbalang #Shorts
+  niche="liminal-dread"                              → #LiminalDread #LiminalSpace #Backrooms #DreadCore #Shorts
+  niche="sleep-paralysis"                            → #SleepParalysis #NightTerrors #BedroomHorror #Shorts
+
+youtube_tags (metadata, NOT description hashtags — different field):
+- 8-12 tags. No '#' prefix. Lowercase. Comma-separated when joined; total length under 500 chars.
+- Mix three layers:
+  1. Broad niche tags (2-3): "filipino mythology", "folklore", "philippine folklore"
+  2. Topic-specific tags (3-4): "tikbalang", "horse spirit", "rainforest spirits"
+  3. Format/audience tags (3-4): "shorts", "pov", "horror short", "ai short film"
+- Tags help YouTube classify the video and surface it for niche searches. Be specific where
+  possible — "tikbalang" outperforms "philippine monster" because viewers search the creature
+  name, not the abstract category.
+
+Tag set example for the Tikbalang twist video:
+  ["filipino mythology", "philippine folklore", "tikbalang", "horse spirit", "rainforest spirits",
+   "asian horror", "shorts", "pov", "horror short", "haunted pov", "ai short film"]
 
 Strong action verbs to favor: sprint, lunge, dive, whip, crash, lash, burst, slam, surge,
 plunge, tear, vault, twist, erupt, shatter, recoil, hurtle, fling, snap, claw, leap.
 Weak verbs to AVOID: walks, stands, looks, watches, sees, appears, waits, turns, gazes.
 
-Examples of strong FIRST-PERSON scene_actions:
-  "Machete blade swings into view, hacking thick vines as fog rushes past the lens."
-  "Boots pound through wet leaves in panicked rhythm, mud splashing the camera."
-  "Hands grip a flickering flashlight, beam jerking up to glowing eyes in the trees."
-  "Sweat-streaked palms slam against ancient stone, breath fogging the lens."
+Examples of strong scene_actions (mix of perspectives — third-person, POV, over-the-shoulder
+all welcome):
+  "Hunter sprints through fog as low branches whip across his face."
+  "Tikbalang's hooves crash through underbrush, kicking up wet leaves and dust."
+  "Vines lash sideways as the hunter dives under a fallen log, rolling onto his back."
+  "Camera whips up to ancient ruins erupting with luminous moss as the figure vanishes."
 
 Examples of weak scene_actions to REJECT and rewrite:
-  "Hunter walks deeper into the rainforest." — third-person AND no peak; rewrite as
-    "Boots crash through underbrush as your machete swings vines aside, fog parting fast."
-  "Hunter looks around uneasily, sensing something." — third-person AND reaction-only.
-  "Tikbalang appears in the distance." — third-person, static, no kinetic energy.
-  "Mist curls around ancient trees." — atmosphere-only, no protagonist body in frame.
+  "Hunter walks deeper into the rainforest." — pure traversal, no peak.
+  "Hunter looks around uneasily, sensing something." — reaction-only.
+  "Tikbalang appears in the distance." — static reveal, no kinetic energy.
+  "Mist curls around ancient trees." — atmosphere-only, no subject doing anything.
 
-Avoid: complex multi-character dialogue, lip-sync, THIRD-PERSON FRAMINGS, fast cuts within a
-scene, fine hand-detail work like writing/sewing (AI video renders these badly), text/signs in
-the world (also rendered badly), STATIC POSES, PURE TRAVERSAL, REACTION-ONLY SHOTS, and
-ATMOSPHERE-ONLY SHOTS.
+Avoid: complex multi-character dialogue, lip-sync, fast cuts within a scene, fine hand-detail
+work like writing/sewing (AI video renders these badly), text/signs in the world (also
+rendered badly), STATIC POSES, PURE TRAVERSAL, REACTION-ONLY SHOTS, and ATMOSPHERE-ONLY
+SHOTS.
 """
 
 USER_TEMPLATE = """Idea: {idea}
