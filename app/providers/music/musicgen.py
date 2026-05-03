@@ -14,9 +14,24 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PROMPT_FOR_NICHE: dict[str, str] = {
+    # Narrative-mode horror niches
     "filipino-mythology": "dark ambient drone with sparse kulintang gongs, slow tempo",
     "cosmic-horror": "deep sub-bass drone with distant metallic stings, slow tempo",
+    "horror": "dark ambient drone with low metallic stings, slow tempo, dread atmosphere",
+    "liminal-dread": "dissonant pad with distant reverb, sparse muted tones",
+    "sleep-paralysis": "low rumbling drone with breathless ambient texture",
+    # Top-5 ranking-mode niches (broader category buckets)
+    "satisfying": "smooth ambient pulse with subtle synth swells, satisfying tempo",
+    "oddly_specific": "quirky lo-fi shuffle with playful percussion",
+    "fails": "low comedic brass stings over awkward acoustic tempo",
+    "wins": "uplifting cinematic build with triumphant strings",
+    "cute": "warm playful melody with cheerful ukulele and light percussion",
+    "funny": "bouncy comedic strings with lighthearted woodwinds",
+    "mind_blowing": "epic orchestral build with big-reveal cinematic tension",
 }
+# Used for unknown niche strings — n8n workflows pick from a free-form list,
+# so a niche that isn't mapped above shouldn't crash the job; it should fall
+# through to a safe neutral underscore that won't fight any genre.
 DEFAULT_PROMPT = "cinematic ambient drone, slow tempo, atmospheric"
 
 # MusicGen-small has a positional-embedding cap around 1503; going past it
@@ -66,6 +81,16 @@ class MusicGenMusicProvider:
 
         import scipy.io.wavfile
 
+        # Niche → MusicGen prompt. An unmapped niche falls back to the
+        # neutral default and logs a warning so we notice it during ops
+        # (rather than silently producing the same default for every job).
+        if niche and niche not in PROMPT_FOR_NICHE:
+            logger.warning(
+                "musicgen niche %r unmapped; using DEFAULT_PROMPT. Add it to "
+                "PROMPT_FOR_NICHE in app/providers/music/musicgen.py if it's "
+                "expected to recur.",
+                niche,
+            )
         prompt = PROMPT_FOR_NICHE.get(niche or "", DEFAULT_PROMPT)
         logger.info("generating music with MusicGen: %r", prompt)
 

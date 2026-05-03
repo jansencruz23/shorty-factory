@@ -1,12 +1,17 @@
 """LangGraph wiring.
 
 Nodes:
-    compose      -> Storyboard
+    compose      -> BaseStoryboard (Storyboard or TopFiveStoryboard)
     generate     -> per-scene clip MP4s via the configured video provider
     stitch       -> 9:16 + caption overlay -> stitched.mp4
     music        -> music bed muxed -> final.mp4
 
 State is the JobState TypedDict from app.graph.state.
+
+The mode field is only consumed inside node_compose. Downstream nodes
+(generate, stitch) call protocol methods on the storyboard (num_scenes,
+prompt_for_scene, build_caption_plan) — they don't know which concrete
+mode is active. Adding a third mode requires no edits here.
 
 Graph nodes report progress through a ProgressSink callback supplied by
 the caller (the runner). They have no compile-time dependency on the
@@ -36,10 +41,15 @@ logger = logging.getLogger(__name__)
 def _make_compose_node(progress: ProgressSink):
     async def node_compose(state: JobState) -> JobState:
         await progress(stage="compose")
+        # mode is the only place in the graph that branches on the format.
+        # Default to "narrative" for jobs missing the field (older clients,
+        # backward compat).
+        mode = state.get("mode", "narrative")
         sb = await composer_mod.compose(
             idea=state["idea"],
             niche=state.get("niche"),
             num_scenes=state["num_scenes"],
+            mode=mode,
             pov_caption_override=state.get("pov_caption_override"),
         )
         paths = paths_for(state["job_id"])
@@ -53,7 +63,9 @@ def _make_generate_node(progress: ProgressSink):
     async def node_generate(state: JobState) -> JobState:
         sb = state["storyboard"]
         paths = paths_for(state["job_id"])
-        prompts = [sb.prompt_for_scene(i) for i in range(len(sb.scene_actions))]
+        # Polymorphic — protocol on BaseStoryboard. Both Storyboard and
+        # TopFiveStoryboard implement num_scenes() and prompt_for_scene().
+        prompts = [sb.prompt_for_scene(i) for i in range(sb.num_scenes())]
 
         await progress(stage="generate", scene=0)
 
@@ -72,9 +84,13 @@ def _make_stitch_node(progress: ProgressSink):
         await progress(stage="stitch")
         paths = paths_for(state["job_id"])
         sb = state["storyboard"]
+        # Polymorphic: storyboard owns its caption layout. Narrative returns
+        # CaptionPlan(persistent=...), top-5 returns CaptionPlan(title=...,
+        # per_clip=[...]). Stitcher branches on which fields are populated.
+        plan = sb.build_caption_plan()
         out = await stitch_mod.stitch(
             [Path(p) for p in state["clip_paths"]],
-            sb.pov_caption,
+            plan,
             paths.stitched,
         )
         return {"stitched_path": str(out)}
