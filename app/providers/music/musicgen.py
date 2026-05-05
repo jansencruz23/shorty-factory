@@ -14,9 +14,24 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 PROMPT_FOR_NICHE: dict[str, str] = {
+    # Narrative-mode horror niches
     "filipino-mythology": "dark ambient drone with sparse kulintang gongs, slow tempo",
     "cosmic-horror": "deep sub-bass drone with distant metallic stings, slow tempo",
+    "horror": "dark ambient drone with low metallic stings, slow tempo, dread atmosphere",
+    "liminal-dread": "dissonant pad with distant reverb, sparse muted tones",
+    "sleep-paralysis": "low rumbling drone with breathless ambient texture",
+    # Top-5 ranking-mode niches (broader category buckets)
+    "satisfying": "smooth ambient pulse with subtle synth swells, satisfying tempo",
+    "oddly_specific": "quirky lo-fi shuffle with playful percussion",
+    "fails": "low comedic brass stings over awkward acoustic tempo",
+    "wins": "uplifting cinematic build with triumphant strings",
+    "cute": "warm playful melody with cheerful ukulele and light percussion",
+    "funny": "bouncy comedic strings with lighthearted woodwinds",
+    "mind_blowing": "epic orchestral build with big-reveal cinematic tension",
 }
+# Used for unknown niche strings — n8n workflows pick from a free-form list,
+# so a niche that isn't mapped above shouldn't crash the job; it should fall
+# through to a safe neutral underscore that won't fight any genre.
 DEFAULT_PROMPT = "cinematic ambient drone, slow tempo, atmospheric"
 
 # MusicGen-small has a positional-embedding cap around 1503; going past it
@@ -59,6 +74,7 @@ class MusicGenMusicProvider:
         *,
         niche: str | None = None,
         track_override: str | None = None,
+        music_prompt: str | None = None,
     ) -> Path:
         # track_override is meaningless for the generative path — silently
         # ignored so per-job overrides via webhook don't break this provider.
@@ -66,8 +82,32 @@ class MusicGenMusicProvider:
 
         import scipy.io.wavfile
 
-        prompt = PROMPT_FOR_NICHE.get(niche or "", DEFAULT_PROMPT)
-        logger.info("generating music with MusicGen: %r", prompt)
+        # Resolution priority:
+        # 1. music_prompt — LLM-tailored prompt from the storyboard. Has full
+        #    context (idea + niche + tone) so it produces the most fitting bed.
+        # 2. niche → PROMPT_FOR_NICHE dict. Static mapping kept as a safety net
+        #    for callers that don't use the storyboard composer (e.g. manual
+        #    curl jobs without going through the LLM).
+        # 3. DEFAULT_PROMPT — final fallback when no signal at all.
+        # An unmapped niche logs a warning so it gets noticed in ops; an
+        # explicit music_prompt bypasses the dict entirely (no warning).
+        if music_prompt:
+            prompt = music_prompt
+            logger.info("musicgen using storyboard prompt: %r", prompt)
+        elif niche and niche in PROMPT_FOR_NICHE:
+            prompt = PROMPT_FOR_NICHE[niche]
+            logger.info("musicgen using niche prompt for %r: %r", niche, prompt)
+        else:
+            if niche:
+                logger.warning(
+                    "musicgen niche %r unmapped and no music_prompt supplied; "
+                    "using DEFAULT_PROMPT. Storyboards from the LLM should "
+                    "always carry music_prompt — check node_music wiring if "
+                    "this recurs.",
+                    niche,
+                )
+            prompt = DEFAULT_PROMPT
+            logger.info("musicgen using default prompt: %r", prompt)
 
         # Load once and cache; subsequent jobs skip all HF HEAD checks
         # and weight deserialization.
