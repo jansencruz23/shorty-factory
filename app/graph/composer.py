@@ -23,7 +23,7 @@ def get_chat_llm() -> ChatOpenAI:
         api_key=settings.llm.nvidia_api_key,
         base_url=settings.llm.nvidia_base_url,
         temperature=0.7,
-        max_tokens=16000,
+        max_tokens=40000,
     )
 
 
@@ -39,6 +39,7 @@ async def compose(
     # the mode is picked — speeds up cold start when only one mode is used.
     if mode == "narrative":
         from app.graph.composers.narrative import compose_narrative
+
         return await compose_narrative(
             idea=idea,
             niche=niche,
@@ -47,6 +48,7 @@ async def compose(
         )
     if mode == "top5":
         from app.graph.composers.top5 import compose_top5
+
         # num_scenes is fixed at 5 for top-5 — the runner already clamps it
         # before reaching here, but the per-mode composer ignores it either way.
         return await compose_top5(idea=idea, niche=niche)
