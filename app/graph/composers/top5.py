@@ -1,16 +1,17 @@
 """Top-5 ranking-mode composer.
 
-Produces a TopFiveStoryboard: 5 self-contained ranked moments around one
-theme, NOT a story arc. The persistent main_title sits at the top of every
-clip; the rank caption (#5..#1) switches per clip.
+Produces a TopFiveStoryboard for the progressive countdown layout: a
+multi-color title with an accent phrase popped in red, a brainrot subtitle
+that teases the payoff, and 5 ranked moments with MINIMAL 1-4 word captions
+that reveal cumulatively as the countdown plays.
 
 Domain-agnostic: the SYSTEM prompt teaches the format with examples spanning
-horror, wins, and cute so the LLM doesn't anchor to one tone. Whatever niche
-+ idea the caller passes in, the composer adapts.
+horror, wins, and cute so the LLM doesn't anchor to one tone.
 
 Validation:
 - exactly 5 items required (one retry on length mismatch, then fail)
-- ranks must be {5,4,3,2,1}; sorted descending if the LLM returns out of order"""
+- ranks must be {5,4,3,2,1}; sorted descending if the LLM returns out of order
+- accent_phrase must appear inside one of the title_lines"""
 
 from __future__ import annotations
 
@@ -45,26 +46,88 @@ style_anchor (locked — reused verbatim every clip):
   Wins → "high-contrast vibrant color, golden-hour light, dynamic lens flares, triumphant
   energy, sports-doc aesthetic."
 
-main_title (the persistent on-screen title — burned across every clip):
-- Format: "Top 5 [adjective] [theme] [Moments|Encounters|Things|Fails|Wins|Reactions]"
-- Lead with "Top 5 ". Use Title Case. No emoji. ≤ 60 characters.
-- The adjective amplifies what the viewer is about to see (Most Satisfying, Cutest, Wildest,
-  Funniest, Scariest, Most Insane, Sweetest, Strangest).
-- Examples:
-    "Top 5 Most Satisfying Tikbalang Moments"
-    "Top 5 Cutest Cat Reactions"
-    "Top 5 Wildest Skateboard Wins"
-    "Top 5 Funniest Lola Hugot Moments"
-    "Top 5 Scariest Aswang Sightings"
+══════════════════════════════════════════════════════════════════════════════
+ON-SCREEN LAYOUT (this is what the renderer draws — write the fields below
+to match this layout exactly):
 
-items: exactly 5 entries, ordered rank 5 → 4 → 3 → 2 → 1 (items[0].rank=5, items[4].rank=1).
+   ┌─────────────────────────────────────────┐
+   │       Ranking Cutest                    │  ← title_lines[0], white
+   │       Baby Responses Ever               │  ← title_lines[1], "Baby Responses"
+   │       you wont believe the last one     │  ← subtitle, smaller, white
+   │                                         │
+   │   5. cute blue eyes                     │  ← rank list: revealed cumulatively,
+   │   4. i love mom                         │     top-to-bottom. items[0] (rank 5)
+   │   3. unbelievable                       │     reveals on clip 0; items[4] (rank 1)
+   │   2. thank you                          │     reveals on clip 4 (last).
+   │   1. Hiiii!                             │     Numbers always visible from clip 0.
+   │                                         │
+   │   [video content fills the rest]        │
+   └─────────────────────────────────────────┘
+
+══════════════════════════════════════════════════════════════════════════════
+
+main_title (plain string, used for YouTube fallbacks):
+- Format: "Top 5 [adjective] [theme] [Moments|Reactions|Things|Encounters|Wins|Fails]"
+  OR "Ranking [adjective] [theme] [Moments|Reactions|...]"
+- Lead with "Top 5 " or "Ranking ". Title Case. No emoji. ≤ 60 characters.
+- The adjective amplifies what the viewer sees (Most Satisfying, Cutest, Wildest,
+  Funniest, Scariest, Most Insane, Sweetest, Strangest).
+- Examples: "Top 5 Most Satisfying Tikbalang Moments", "Ranking Cutest Baby Responses
+  Ever", "Top 5 Wildest Skateboard Wins".
+
+title_lines (list of 1-2 strings — the LLM picks the line break):
+- The renderer does NOT auto-wrap. What you put here is what shows on screen.
+- For a short title (≤4 words), use 1 line. For longer titles, break into 2 lines so
+  the line widths are roughly balanced.
+- Concatenating the lines with a space should reproduce main_title.
+- Pick a break point that lets the accent_phrase sit mostly on one line (split phrases
+  across lines look ugly).
+- Examples:
+    "Top 5 Most Unsettling Tikbalang Encounters" →
+        ["Top 5 Most Unsettling", "Tikbalang Encounters"]
+    "Ranking Cutest Baby Responses Ever" →
+        ["Ranking Cutest", "Baby Responses Ever"]
+    "Top 5 Wildest Skateboard Wins" →
+        ["Top 5 Wildest", "Skateboard Wins"]
+
+accent_phrase (string — 1-3 words from main_title, rendered in red):
+- MUST appear EXACTLY (case-sensitive, including spaces) inside one of the title_lines.
+  If it doesn't, the renderer falls back to all-white and you lose the visual pop.
+- Pick the noun phrase that POPS — usually the subject of the countdown.
+- Examples:
+    main_title="Ranking Cutest Baby Responses Ever"        → accent_phrase="Baby Responses"
+    main_title="Top 5 Most Unsettling Tikbalang Encounters" → accent_phrase="Tikbalang Encounters"
+    main_title="Top 5 Wildest Skateboard Wins"             → accent_phrase="Skateboard Wins"
+    main_title="Top 5 Cutest Cat Reactions"                 → accent_phrase="Cat Reactions"
+
+subtitle (short tease line — ≤8 words, lowercase preferred):
+- Sells the payoff WITHOUT spoiling the actual #1.
+- Brainrot/casual energy. Lowercase. May include 1 emoji.
+- Examples: "you wont believe the last one", "the last one is lovely", "wait for #1",
+  "no.1 is unhinged 🚨", "pure cinema fr", "stick around for #1", "the last one cooked".
+- REJECT formal phrasing ("In this countdown, you will see..."), spoilers ("the kitten
+  wins"), or anything ≥ 9 words.
+
+items: exactly 5 entries, ordered rank 5 → 4 → 3 → 2 → 1. items[0].rank=5, items[4].rank=1.
 
 Per item:
   rank — integer, decreasing 5,4,3,2,1.
-  caption — verb-phrase describing what happens in this clip. ≤ 8 words. NO rank prefix
-            (the renderer adds "#5: ", "#4: ", ... automatically).
-            Examples: "Domino chain collapses in slow motion" / "Kitten swats at a feather"
-                      / "Skater lands an impossible kickflip".
+  caption — MINIMAL brainrot phrase. **1-4 WORDS MAX.** Not a sentence, not a description.
+            Pick a vibe-tag, an exclamation, or a hyper-condensed observation. The
+            renderer prepends "{rank}. " automatically — DO NOT include it.
+            GOOD captions: "cute blue eyes", "i love mom", "unbelievable", "thank you",
+                           "Hiiii!", "no cap", "lowkey iconic", "sheesh", "pure menace",
+                           "down bad", "iconic behavior", "cinema", "down catastrophic".
+            BAD captions:  "The baby smiles at the camera in a charming way" — too long,
+                           "A funny moment captured perfectly" — generic, no vibe,
+                           "#5: cute eyes" — rank prefix included (renderer adds it).
+            Tone-match the niche:
+              CUTE      → "cute blue eyes", "i love mom", "thank you", "Hiiii!", "smol".
+              HORROR    → "the smile", "wrong", "not him", "menace", "no thanks".
+              WINS      → "sheesh", "no cap", "GOATed", "cinema", "casual W".
+              FAILS     → "skill issue", "down bad", "L behavior", "embarrassing",
+                          "cooked".
+              SATISFYING → "perfect fit", "smooth", "elite", "chef's kiss", "asmr".
   setting — micro-setting unique to this clip: location + atmosphere. Different from
             siblings'. This is what visually separates the moments.
             Examples: "Sunlit studio apartment with hardwood floors" / "Misty rainforest
@@ -82,78 +145,69 @@ Weak verbs to AVOID: walks, stands, looks, watches, sees, appears, waits, turns,
 
 Multi-domain example pairs (study these — the format is the same regardless of tone):
 
-────── HORROR (Filipino mythology) ──────
-main_title: "Top 5 Most Unsettling Tikbalang Encounters"
-style_anchor: "Desaturated grayscale with blood-red accents, low-key cinematic lighting,
-              35mm grain, dread-mood."
+────── CUTE (babies) ──────
+main_title:    "Ranking Cutest Baby Responses Ever"
+title_lines:   ["Ranking Cutest", "Baby Responses Ever"]
+accent_phrase: "Baby Responses"
+subtitle:      "you wont believe the last one"
+style_anchor:  "Warm bright daylight, soft pastel palette, shallow depth-of-field,
+               cheerful uplifting mood, 50mm cinematic."
 items:
-  rank=5 setting:"Misty rainforest clearing at dusk"
-         caption:"Hooves crash through the underbrush"
-         scene_action:"Hooves smash through wet leaves and ferns, kicking up debris in a
-                       low fog as something charges past."
-         scene_shot:"Low-angle ground-level static lock-off, ferns brush the lens."
-  rank=4 setting:"Old colonial road wrapped in fog"
-         caption:"Footprints flip from boots to hooves"
-         scene_action:"Camera tracks across damp earth as fresh boot-prints transform
-                       mid-trail into hoof-prints, then back."
-         scene_shot:"Top-down dolly-in pushing along the trail."
-  rank=3 setting:"Moss-covered stone shrine at moonrise"
-         caption:"Mane whips into view"
-         scene_action:"A black mane lashes across frame as something tall rears up,
-                       silhouette flickering against the moon."
-         scene_shot:"Whip-pan from shrine to wide silhouette."
-  rank=2 setting:"Mountain trail switchback, predawn"
-         caption:"Smile widens beneath the hat"
-         scene_action:"Wide-brim hat tilts up — too-wide grin glints, then teeth become
-                       horse teeth in close-up reveal."
-         scene_shot:"Push-in extreme close-up under the hat brim."
-  rank=1 setting:"Endless rainforest path looping back"
-         caption:"You arrive where you started"
-         scene_action:"Hiker breaks through underbrush — same fallen log, same red ribbon —
-                       hooves stamp the dirt behind them."
-         scene_shot:"Reverse dolly pull-back revealing hoofprints behind the figure."
+  rank=5 setting:"Cozy nursery with soft morning light"
+         caption:"cute blue eyes"
+         scene_action:"Baby's eyes widen as a parent's hand offers a rattle, sparkling
+                       blue irises catching the sunlight in slow zoom."
+         scene_shot:"Extreme close-up push-in on the eyes."
+  rank=4 setting:"Sunlit kitchen with high chair"
+         caption:"i love mom"
+         scene_action:"Baby reaches both arms toward an off-camera figure and giggles,
+                       milk-dotted lips parting in joy."
+         scene_shot:"Medium handheld over-the-shoulder."
+  rank=3 setting:"Living-room rug, midday"
+         caption:"unbelievable"
+         scene_action:"Baby's mouth drops fully open in cartoon-shock as a soap bubble
+                       lands on a tiny finger."
+         scene_shot:"Low-angle close-up, slow dolly-in."
+  rank=2 setting:"Bath time, fluffy towel"
+         caption:"thank you"
+         scene_action:"Baby clasps hands together briefly mid-towel-wrap, prayer-like,
+                       beam erupting across the face."
+         scene_shot:"Eye-level close-up static."
+  rank=1 setting:"Front-facing phone, golden-hour bedroom"
+         caption:"Hiiii!"
+         scene_action:"Baby leans into the lens until their cheek nearly touches it,
+                       gigantic smile filling the frame, hand reaches up to pat camera."
+         scene_shot:"First-person POV close-up, gentle handheld bob."
+
+────── HORROR (Filipino mythology) ──────
+main_title:    "Top 5 Most Unsettling Tikbalang Encounters"
+title_lines:   ["Top 5 Most Unsettling", "Tikbalang Encounters"]
+accent_phrase: "Tikbalang Encounters"
+subtitle:      "no.1 is unhinged 🚨"
+style_anchor:  "Desaturated grayscale with blood-red accents, low-key cinematic lighting,
+               35mm grain, dread-mood."
+items (rank=5..1, each with 1-4 word brainrot horror caption):
+  rank=5 caption:"hooves"           ...
+  rank=4 caption:"wrong footprints" ...
+  rank=3 caption:"the mane"         ...
+  rank=2 caption:"that smile"       ...
+  rank=1 caption:"loop"             ...
 
 ────── WINS (skating) ──────
-main_title: "Top 5 Wildest Skateboard Wins"
-style_anchor: "High-contrast vibrant color, golden-hour light, dynamic lens flares,
-              triumphant energy, sports-doc aesthetic."
+main_title:    "Top 5 Wildest Skateboard Wins"
+title_lines:   ["Top 5 Wildest", "Skateboard Wins"]
+accent_phrase: "Skateboard Wins"
+subtitle:      "stick around for #1 fr"
+style_anchor:  "High-contrast vibrant color, golden-hour light, dynamic lens flares,
+               triumphant energy, sports-doc aesthetic."
 items:
-  rank=5 setting:"Sunset skatepark concrete bowl"  caption:"Lands a switch heelflip clean"
-         scene_action:"Skater pops a switch heelflip mid-bowl, board snaps under feet,
-                       wheels slap concrete as they roll out grinning."
-         scene_shot:"Tracking medium handheld follows the skater out of the bowl."
-  rank=4 setting:"City stair set at twilight"     caption:"Kickflips a 12-stair gap"
-         ... (full action + shot)
-  ... (rank 3, 2, 1 each unique)
+  rank=5 caption:"clean"             ...
+  rank=4 caption:"sheesh"            ...
+  rank=3 caption:"no cap"            ...
+  rank=2 caption:"GOATed"            ...
+  rank=1 caption:"cinema"            ...
 
-────── CUTE (cats) ──────
-main_title: "Top 5 Cutest Cat Reactions"
-style_anchor: "Warm bright daylight, soft pastel palette, shallow depth-of-field,
-              cheerful uplifting mood, 50mm cinematic."
-items:
-  rank=5 setting:"Sunlit studio apartment hardwood floor"
-         caption:"Pounces on a feather toy"
-         scene_action:"Kitten leaps sideways, paws batting at a drifting feather, tumbles
-                       in golden sunlight in a mock-attack roll."
-         scene_shot:"Low-angle handheld tracking shot, follow-pan."
-  ... (rank 4-1 each unique cute beat)
-
-GOOD captions (verb-phrase, no rank prefix, ≤8 words):
-  "Hooves crash through the underbrush"
-  "Footprints flip from boots to hooves"
-  "Kitten swats at a feather"
-  "Skater lands an impossible kickflip"
-
-BAD captions (do NOT do these):
-  "#5: Hooves crash..."           — rank prefix is added by the renderer; do not include.
-  "Number five is when the..."    — narrative voice, breaks the format.
-  "Cat is cute"                    — no verb peak, atmosphere-only.
-  "The Tikbalang appears"         — static reveal, not a kinetic beat.
-
-WEAK scene_actions to AVOID:
-  "Hunter walks deeper into the rainforest." — pure traversal, no peak.
-  "Cat sits and looks around."               — reaction-only, no kinetic beat.
-  "Skater stands at the top of the ramp."   — setup-only, no impact.
+══════════════════════════════════════════════════════════════════════════════
 
 YOUTUBE METADATA:
 
@@ -161,10 +215,8 @@ youtube_title (max 60 chars):
 - Often a tighter rephrase of main_title. Lead with the niche keyword.
 - No ALL-CAPS, no clickbait clichés ("AMAZING", "INSANE", "YOU WON'T BELIEVE"),
   at most one emoji.
-- Examples:
-    "Top 5 Most Unsettling Tikbalang Encounters"
-    "Top 5 Cutest Cat Reactions You'll Watch Twice"
-    "Top 5 Wildest Skateboard Wins of the Year"
+- Examples: "Top 5 Most Unsettling Tikbalang Encounters", "Ranking Cutest Baby
+  Responses Ever", "Top 5 Wildest Skateboard Wins of the Year".
 
 youtube_description (3-5 short lines):
 Line 1: hook restated for the algorithm preview, ≤140 chars. Mention the count and theme.
@@ -179,21 +231,6 @@ Hashtag derivation rules:
 - Add a topic-specific tag if there's a named subject in the video (#Tikbalang, #Cats).
 - ALWAYS include #Top5 and #Shorts.
 - Output 4-6 total. NO hardcoded niche names — adapt to the niche supplied.
-
-Example description (Tikbalang Top 5):
-  "Five of the most unsettling Tikbalang moments captured on AI video — ranked 5 to 1.
-
-  A countdown of the eeriest sightings the Filipino mountain trickster has been blamed
-  for over the years.
-
-  #FilipinoMythology #Tikbalang #Folklore #Top5 #Shorts"
-
-Example description (Cute cats Top 5):
-  "Five of the cutest cat reactions ranked 5 to 1 — the last one will make you smile.
-
-  A wholesome countdown of feline pounces, swats, and surprise reactions.
-
-  #Cute #Cats #CatsOfTikTok #Top5 #Shorts"
 
 youtube_tags (metadata layer, NOT description hashtags):
 - 8-12 tags. No '#' prefix. Lowercase. Comma-separated when joined; total under 500 chars.
@@ -246,9 +283,8 @@ async def compose_top5(*, idea: str, niche: str | None) -> TopFiveStoryboard:
 
     # Sort items by rank descending (5 → 1) so downstream code can rely on
     # items[0] being rank 5. The LLM is instructed to do this but doesn't
-    # always comply, and the rendering code prepends "#{rank}: " from the
-    # rank field anyway, so a mis-ordered list would still produce wrong
-    # caption-clip alignment.
+    # always comply — and the renderer prepends the rank prefix from item.rank
+    # so a mis-ordered list would still produce wrong reveal ordering.
     storyboard.items.sort(key=lambda it: it.rank, reverse=True)
 
     expected_ranks = [5, 4, 3, 2, 1]
@@ -256,6 +292,20 @@ async def compose_top5(*, idea: str, niche: str | None) -> TopFiveStoryboard:
     if actual_ranks != expected_ranks:
         raise ValueError(
             f"top5 composer returned ranks {actual_ranks}, expected {expected_ranks}"
+        )
+
+    # accent_phrase must appear in one of the title_lines (case-sensitive),
+    # otherwise the renderer can't apply the color highlight and falls back
+    # to all-white. Log a warning rather than failing — all-white still
+    # produces a valid video, just without the visual pop.
+    if storyboard.accent_phrase and not any(
+        storyboard.accent_phrase in line for line in storyboard.title_lines
+    ):
+        logger.warning(
+            "top5 accent_phrase %r not found in title_lines %r — title will "
+            "render all-white. Tighten the prompt if this recurs.",
+            storyboard.accent_phrase,
+            storyboard.title_lines,
         )
 
     return storyboard

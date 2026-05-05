@@ -1,18 +1,34 @@
 """Top-5 ranking-mode storyboard.
 
-Five self-contained ranked moments around a single theme. NOT a story arc —
-each item stands alone, building to #1 as the strongest hit. The persistent
-main_title sits at the top of every clip; the rank caption switches per clip.
+Five self-contained ranked moments around a single theme, NOT a story arc.
+Each item stands alone, building to #1 as the strongest hit. The on-screen
+layout uses a *progressive countdown reveal*:
 
-The style_anchor locks the visual identity across all 5 clips so the
-countdown reads as a unified piece. Each item gets its own micro-setting
-that varies — that's what visually separates the moments."""
+- A multi-color title sits at the top, persistent across all clips, with one
+  accent phrase popped in red.
+- A short subtitle below the title teases the payoff ("you wont believe the
+  last one", "wait for #1").
+- A 5-row rank list is stacked top-to-bottom. All five row numbers appear
+  from clip 0; each successive clip reveals one more caption next to its
+  number, so by the final clip every caption is visible.
+
+The captions themselves are MINIMAL brainrot/Gen Z phrases — 1-4 words, not
+sentences. The hook is the format and the reveal cadence, not the prose.
+
+The style_anchor locks visual identity across all 5 clips. Each item gets
+its own micro-setting that varies — that's what visually separates the
+moments."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.graph.storyboards.base import CaptionPlan
+from app.graph.storyboards.base import (
+    CaptionPlan,
+    ProgressiveOverlay,
+    RankRow,
+    TitleSegmentRender,
+)
 
 
 class TopFiveItem(BaseModel):
@@ -23,15 +39,16 @@ class TopFiveItem(BaseModel):
     )
     caption: str = Field(
         ...,
-        description="Verb-phrase describing what happens in this clip. The renderer prepends "
-        "'#N: ' so DO NOT include the rank prefix here. Keep ≤8 words. "
-        "Example: 'Domino chain collapses in slow motion' → renders as "
-        "'#5: Domino chain collapses in slow motion'.",
+        description="MINIMAL humorous caption — 1-4 words, brainrot/Gen Z tone. NOT a "
+        "complete sentence. NO rank prefix (the renderer prepends '5.', '4.', etc.). "
+        "Examples: 'cute blue eyes', 'i love mom', 'unbelievable', 'thank you', 'Hiiii!', "
+        "'no cap', 'lowkey iconic', 'sheeesh', 'down bad', 'menace'. "
+        "REJECT: complete sentences, formal descriptions, anything over 5 words.",
     )
     setting: str = Field(
         ...,
         description="This item's micro-setting — location/atmosphere unique to this clip. "
-        "Different from the next item's setting; that's what visually separates the moments.",
+        "Different from sibling items'; that's what visually separates the moments.",
     )
     scene_action: str = Field(
         ...,
@@ -54,10 +71,35 @@ class TopFiveStoryboard(BaseModel):
     )
     main_title: str = Field(
         ...,
-        description="The persistent title displayed at the top of every clip. Format: "
-        "'Top 5 [adjective] [theme] [Moments|Encounters|Things|Fails|Wins]'. Examples: "
-        "'Top 5 Most Satisfying Tikbalang Moments', 'Top 5 Cutest Cat Reactions', "
-        "'Top 5 Wildest Skateboard Wins'.",
+        description="The full title as a plain string — used for YouTube title fallbacks "
+        "and logging. Format: 'Top 5 [adjective] [theme] [Moments|Reactions|Things|...]', "
+        "or 'Ranking [adjective] [theme] [Moments|Reactions|...]'. Examples: 'Top 5 Most "
+        "Satisfying Tikbalang Moments', 'Ranking Cutest Baby Responses Ever', 'Top 5 "
+        "Wildest Skateboard Wins'.",
+    )
+    title_lines: list[str] = Field(
+        ...,
+        description="The title pre-broken into 1-2 RENDERED lines (the renderer does NOT "
+        "auto-wrap — what you put here is what shows). Concatenating the lines with a "
+        "space should reproduce main_title. Example for 'Ranking Cutest Baby Responses "
+        "Ever': ['Ranking Cutest', 'Baby Responses Ever']. Pick a break point that puts "
+        "the accent_phrase mostly on one line.",
+    )
+    accent_phrase: str = Field(
+        ...,
+        description="A 1-3 word phrase from main_title to highlight in accent color "
+        "(red). MUST appear EXACTLY (case-sensitive) inside one of the title_lines. "
+        "Pick the noun phrase that pops visually — usually the subject of the countdown. "
+        "Examples: in 'Ranking Cutest Baby Responses Ever' → 'Baby Responses'; in 'Top 5 "
+        "Wildest Skateboard Wins' → 'Skateboard Wins'; in 'Top 5 Most Unsettling "
+        "Tikbalang Encounters' → 'Tikbalang Encounters'.",
+    )
+    subtitle: str = Field(
+        ...,
+        description="Short tease line under the title — sells the payoff without "
+        "spoiling. Lowercase preferred for casual brainrot energy. Max 8 words. "
+        "Examples: 'you wont believe the last one', 'the last one is lovely', "
+        "'wait for #1', 'no.1 is unhinged', 'pure cinema'. May include 1 emoji.",
     )
     youtube_title: str = Field(
         ...,
@@ -97,8 +139,49 @@ class TopFiveStoryboard(BaseModel):
         ]
         return ". ".join(p.rstrip(". ") for p in parts) + "."
 
+    def _split_line_by_accent(self, line: str) -> list[TitleSegmentRender]:
+        """Split one title line into colored segments, coloring the accent
+        phrase (if present) red and the surrounding text white. If the
+        phrase isn't found in this line, the whole line stays white — the
+        accent phrase is on a different line."""
+        idx = line.find(self.accent_phrase) if self.accent_phrase else -1
+        if idx == -1:
+            return [TitleSegmentRender(text=line, color="white")]
+        segments: list[TitleSegmentRender] = []
+        before = line[:idx]
+        after = line[idx + len(self.accent_phrase):]
+        if before:
+            segments.append(TitleSegmentRender(text=before, color="white"))
+        segments.append(TitleSegmentRender(text=self.accent_phrase, color="accent"))
+        if after:
+            segments.append(TitleSegmentRender(text=after, color="white"))
+        return segments
+
     def build_caption_plan(self) -> CaptionPlan:
-        return CaptionPlan(
-            title=self.main_title,
-            per_clip=[f"#{item.rank}: {item.caption}" for item in self.items],
-        )
+        # Title gets the same colored-segment treatment on every clip — it
+        # doesn't change as the countdown progresses.
+        title_lines_render = [self._split_line_by_accent(line) for line in self.title_lines]
+
+        # One ProgressiveOverlay per clip. Display order = items order =
+        # countdown order: items[0] (rank 5) is at the TOP of the rank list
+        # and gets revealed FIRST; items[4] (rank 1) is at the BOTTOM and
+        # gets revealed LAST. For clip i, rows[0..i] carry their captions;
+        # rows[i+1..] show only their numbers.
+        overlays: list[ProgressiveOverlay] = []
+        for clip_idx in range(len(self.items)):
+            rank_rows: list[RankRow] = []
+            for row_pos, item in enumerate(self.items):
+                rank_rows.append(
+                    RankRow(
+                        number=f"{item.rank}.",
+                        caption=item.caption if row_pos <= clip_idx else None,
+                    )
+                )
+            overlays.append(
+                ProgressiveOverlay(
+                    title_lines=title_lines_render,
+                    subtitle=self.subtitle,
+                    rank_rows=rank_rows,
+                )
+            )
+        return CaptionPlan(progressive=overlays)
