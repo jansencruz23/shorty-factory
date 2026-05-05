@@ -74,6 +74,7 @@ class BaseStoryboard(Protocol):
     youtube_title: str
     youtube_description: str
     youtube_tags: list[str]
+    music_prompt: str  # MusicGen prompt tailored to this video's tone + content
 
     def num_scenes(self) -> int: ...
     def prompt_for_scene(self, index: int) -> str: ...

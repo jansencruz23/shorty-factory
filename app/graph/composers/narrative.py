@@ -231,6 +231,28 @@ Tag set example for the Tikbalang twist video:
   ["filipino mythology", "philippine folklore", "tikbalang", "horse spirit", "rainforest spirits",
    "asian horror", "shorts", "pov", "horror short", "haunted pov", "ai short film"]
 
+MUSIC PROMPT (instrumental MusicGen prompt, tailored to THIS specific video):
+- 12-20 words. Format: [genre/feel] + [key instruments] + [tempo] + [mood/atmosphere].
+- Instrumental only. NEVER mention vocals or lyrics — MusicGen cannot synthesize singing.
+- Tailor to the SPECIFIC subject and tone, not just the niche. A Tikbalang chase, a Diwata
+  romance, and an Aswang reveal are all "filipino-mythology" but want different palettes.
+- Anchor on culture-appropriate instruments when relevant: kulintang gongs / bamboo flute /
+  rondalla strings for Filipino pieces; warm ukulele / glockenspiel for cute pieces;
+  electric guitar / synth swell for hype/wins; muted drone / detuned strings for liminal
+  dread.
+- The composer's twist tone should bleed into the music: a "loop revelation" twist works
+  with cyclical, hypnotic textures; a "role reversal" twist works with a build → false-
+  resolution structure.
+- Examples:
+    Tikbalang chase + identity twist: "dark cinematic kulintang gongs over deep bamboo
+      flute drone, ominous slow tempo, building dread atmosphere"
+    Diwata role-reversal: "ethereal harp and bamboo flute melody with gentle string pad,
+      mystical mid-tempo, dreamy enchanted atmosphere"
+    Aswang reality reversal: "low metallic drones with sparse percussion stings, slow
+      ominous tempo, jump-scare cinematic tension"
+    Sleep paralysis: "hollow breathing texture with distant detuned strings, glacial
+      tempo, suffocating dread"
+
 Strong action verbs to favor: sprint, lunge, dive, whip, crash, lash, burst, slam, surge,
 plunge, tear, vault, twist, erupt, shatter, recoil, hurtle, fling, snap, claw, leap.
 Weak verbs to AVOID: walks, stands, looks, watches, sees, appears, waits, turns, gazes.

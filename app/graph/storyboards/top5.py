@@ -117,6 +117,23 @@ class TopFiveStoryboard(BaseModel):
         "topic-specific, and format keywords (e.g. 'shorts', 'top 5', 'countdown'). "
         "Joined-by-commas length under 500 chars.",
     )
+    music_prompt: str = Field(
+        ...,
+        description="A MusicGen-ready prompt tailored to THIS countdown's specific content "
+        "and tone. 12-20 words. Format: [genre/feel] + [key instruments] + [tempo] + "
+        "[mood/atmosphere]. Instrumental only — NEVER mention vocals or lyrics. Match the "
+        "energy of the format AND the subject. Examples:\n"
+        "  Cute baby reactions: 'warm playful ukulele with light glockenspiel and bouncy "
+        "percussion, cheerful cozy uptempo, wholesome'\n"
+        "  Skateboard wins: 'driving electric guitar riff with cinematic synth swell and "
+        "punchy drums, triumphant fast tempo, hype energy'\n"
+        "  Tikbalang horror countdown: 'dark cinematic kulintang gongs with sparse bamboo "
+        "flute and metallic stings, ominous mid-tempo, dread atmosphere'\n"
+        "  Skateboard fails: 'comedic brass stings with awkward acoustic guitar plinks, "
+        "off-beat tempo, lighthearted slapstick'\n"
+        "  Satisfying loops: 'smooth ambient synth pulse with subtle pad swells, steady "
+        "tempo, hypnotic minimal'",
+    )
     items: list[TopFiveItem] = Field(
         ...,
         description="Exactly 5 items, ordered rank 5 → 4 → 3 → 2 → 1. #1 is the strongest "
@@ -162,19 +179,27 @@ class TopFiveStoryboard(BaseModel):
         # doesn't change as the countdown progresses.
         title_lines_render = [self._split_line_by_accent(line) for line in self.title_lines]
 
-        # One ProgressiveOverlay per clip. Display order = items order =
-        # countdown order: items[0] (rank 5) is at the TOP of the rank list
-        # and gets revealed FIRST; items[4] (rank 1) is at the BOTTOM and
-        # gets revealed LAST. For clip i, rows[0..i] carry their captions;
-        # rows[i+1..] show only their numbers.
+        # Display order is INVERTED from items order: rank 1 sits at the TOP
+        # of the rank list (items[-1]), rank 5 sits at the BOTTOM (items[0]).
+        # The countdown reveal still happens in items order — items[0] (rank
+        # 5, bottom row) populates on clip 0; items[-1] (rank 1, top row)
+        # populates on the final clip. So captions visually fill the list
+        # FROM THE BOTTOM UP, with the #1 reveal landing last at the top.
+        #
+        # For display position p (0 = top), the source item is items[n-1-p].
+        # That item is revealed when clip_idx ≥ (n-1-p).
         overlays: list[ProgressiveOverlay] = []
-        for clip_idx in range(len(self.items)):
+        n = len(self.items)
+        for clip_idx in range(n):
             rank_rows: list[RankRow] = []
-            for row_pos, item in enumerate(self.items):
+            for p in range(n):
+                item_idx = n - 1 - p
+                item = self.items[item_idx]
+                revealed = item_idx <= clip_idx
                 rank_rows.append(
                     RankRow(
                         number=f"{item.rank}.",
-                        caption=item.caption if row_pos <= clip_idx else None,
+                        caption=item.caption if revealed else None,
                     )
                 )
             overlays.append(

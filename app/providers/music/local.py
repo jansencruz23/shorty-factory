@@ -57,7 +57,11 @@ class LocalLibraryMusicProvider:
         *,
         niche: str | None = None,
         track_override: str | None = None,
+        music_prompt: str | None = None,
     ) -> Path:
+        # The local provider picks pre-existing files — there's no generative
+        # step to feed a prompt into. Accepted for protocol parity, ignored.
+        del music_prompt
         src = _pick_track(niche, track_override)
         fade = 1.5
         # `-stream_loop -1 -i src` loops the input forever; `-t duration`

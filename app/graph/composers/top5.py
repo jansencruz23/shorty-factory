@@ -55,14 +55,14 @@ to match this layout exactly):
    │       Baby Responses Ever               │  ← title_lines[1], "Baby Responses"
    │       you wont believe the last one     │  ← subtitle, smaller, white
    │                                         │
-   │   5. cute blue eyes                     │  ← rank list: revealed cumulatively,
-   │   4. i love mom                         │     top-to-bottom. items[0] (rank 5)
-   │   3. unbelievable                       │     reveals on clip 0; items[4] (rank 1)
-   │   2. thank you                          │     reveals on clip 4 (last).
-   │   1. Hiiii!                             │     Numbers always visible from clip 0.
-   │                                         │
-   │   [video content fills the rest]        │
-   └─────────────────────────────────────────┘
+   │   1. Hiiii!                             │  ← rank #1 sits at the TOP, revealed
+   │   2. thank you                          │     LAST (on clip 4 — the payoff).
+   │   3. unbelievable                       │
+   │   4. i love mom                         │
+   │   5. cute blue eyes                     │  ← rank #5 sits at the BOTTOM, revealed
+   │                                         │     FIRST (on clip 0). The list fills
+   │   [video content fills the rest]        │     upward as the countdown advances.
+   └─────────────────────────────────────────┘     Numbers always visible from clip 0.
 
 ══════════════════════════════════════════════════════════════════════════════
 
@@ -238,6 +238,31 @@ youtube_tags (metadata layer, NOT description hashtags):
   1. Broad niche tags (2-3): "filipino mythology", "folklore" / "cats", "pets" / "skateboarding"
   2. Topic-specific tags (3-4): "tikbalang", "horse spirit" / "kitten reactions" / "kickflip"
   3. Format tags (3-4): "top 5", "countdown", "shorts", "ranked"
+
+MUSIC PROMPT (instrumental MusicGen prompt, tailored to THIS specific countdown):
+- 12-20 words. Format: [genre/feel] + [key instruments] + [tempo] + [mood/atmosphere].
+- Instrumental only. NEVER mention vocals or lyrics — MusicGen cannot synthesize singing.
+- Match BOTH the format energy (countdown = anticipation building) AND the subject tone.
+  Cute babies need warm uptempo; horror countdowns need ominous build; skateboard wins
+  need hype drive; fails compilations need comedic awkward.
+- Anchor on instrument palettes that fit the niche:
+    cute      → ukulele, glockenspiel, light percussion, warm bells
+    wins      → electric guitar, big drums, cinematic synth swell
+    horror    → kulintang gongs (Filipino), metallic drones, sparse percussion
+    fails     → comedic brass, awkward acoustic plucks, off-beat tempo
+    satisfying → smooth ambient pulse, soft synth pads, hypnotic
+    funny     → bouncy strings, lighthearted woodwinds, playful percussion
+- Examples:
+    Cute baby reactions: "warm playful ukulele with light glockenspiel and bouncy
+      percussion, cheerful cozy uptempo, wholesome"
+    Skateboard wins: "driving electric guitar riff with cinematic synth swell and punchy
+      drums, triumphant fast tempo, hype energy"
+    Tikbalang horror countdown: "dark cinematic kulintang gongs with sparse bamboo flute
+      and metallic stings, ominous mid-tempo, dread atmosphere"
+    Skateboard fails: "comedic brass stings with awkward acoustic guitar plinks, off-beat
+      tempo, lighthearted slapstick"
+    Satisfying loops: "smooth ambient synth pulse with subtle pad swells, steady tempo,
+      hypnotic minimal"
 
 Avoid in scene_actions/scene_shots: complex multi-character dialogue, lip-sync, fast cuts
 within a scene, fine hand-detail work like writing/sewing (AI video renders these badly),

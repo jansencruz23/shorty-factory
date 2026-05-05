@@ -63,6 +63,23 @@ class Storyboard(BaseModel):
         "'tikbalang', 'aswang'), and format keywords ('shorts', 'pov', 'horror short'). "
         "Total joined-by-commas length must stay under 500 chars (YouTube's hard cap).",
     )
+    music_prompt: str = Field(
+        ...,
+        description="A MusicGen-ready prompt tailored to THIS video's specific content "
+        "and tone. 12-20 words. Format: [genre/feel] + [key instruments] + [tempo] + "
+        "[mood/atmosphere]. Instrumental only — NEVER mention vocals or lyrics. Adapt "
+        "to the actual subject matter, not just the niche category — a Tikbalang chase "
+        "needs different texture than a Diwata romance, even though both are filipino-"
+        "mythology. Examples:\n"
+        "  Tikbalang chase: 'dark cinematic kulintang gongs over deep bamboo flute drone, "
+        "ominous slow tempo, building dread atmosphere'\n"
+        "  Diwata romance: 'ethereal harp and bamboo flute melody with gentle string pad, "
+        "mystical mid-tempo, dreamy enchanted atmosphere'\n"
+        "  Aswang reveal: 'low metallic drones with sparse percussion stings, slow ominous "
+        "tempo, jump-scare cinematic tension'\n"
+        "  Sleep-paralysis: 'hollow breathing texture with distant detuned strings, glacial "
+        "tempo, suffocating dread'",
+    )
     scene_actions: list[str] = Field(
         ...,
         description="Exactly N items. The peak kinetic beat for each ~5s clip — one strong "

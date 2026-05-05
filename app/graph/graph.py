@@ -112,12 +112,21 @@ def _make_music_node(progress: ProgressSink):
             raise ValueError(f"unknown music_mode: {mode!r}")
         provider = get_music_provider(provider_name)
 
+        # Storyboard owns the music prompt — it has full idea + niche + tone
+        # context, so the LLM writes a more tailored prompt than any static
+        # niche → prompt mapping could. Falls back to niche/default inside
+        # the provider if for some reason it's empty (defensive — should
+        # always be set by the composer).
+        sb = state.get("storyboard")
+        music_prompt = sb.music_prompt if sb is not None else None
+
         duration = await mux_mod.probe_duration(paths.stitched)
         await provider.build_track(
             duration,
             paths.music_track,
             niche=state.get("niche"),
             track_override=state.get("music_track"),
+            music_prompt=music_prompt,
         )
         final = await mux_mod.mux(paths.stitched, paths.music_track, paths.final)
 
