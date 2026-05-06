@@ -65,9 +65,11 @@ class TopFiveItem(BaseModel):
 class TopFiveStoryboard(BaseModel):
     style_anchor: str = Field(
         ...,
-        description="Color palette, lighting, lens aesthetic, mood. Reused across ALL 5 "
-        "clips to give the countdown a unified visual identity. NO camera angles here — "
-        "those vary per scene_shot.",
+        description="Natural phone-footage aesthetic: lighting + ambient palette + mood. "
+        "Reused across ALL 5 clips for a unified candid look. NO cinematic language ('50mm', "
+        "'lens flares', 'sports-doc', '35mm grain'); NO camera angles (those vary per "
+        "scene_shot). Anchor on phone-capture cues — 'shot on iPhone', 'natural daylight', "
+        "'no color grading', 'slight handheld wobble', 'raw home-video look'.",
     )
     main_title: str = Field(
         ...,
@@ -148,7 +150,7 @@ class TopFiveStoryboard(BaseModel):
         # routes by intent, and this prefix forces video-mode generation.
         item = self.items[index]
         parts = [
-            "Create a 5-second cinematic video",
+            "Create a 5-second vertical phone-shot video — natural handheld footage, like a casual unplanned clip someone captured on their phone (NOT cinematic, NOT staged, NO color grading). Real-time speed (NO slow motion, NO slowmo, NO time-ramping — actions play at normal pace)",
             self.style_anchor,
             item.setting,
             f"SHOT: {item.scene_shot}",

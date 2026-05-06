@@ -39,12 +39,20 @@ Hard constraints:
 - Build to #1 as the strongest hit. That's the format viewers expect from countdowns.
 
 style_anchor (locked — reused verbatim every clip):
-- 1 sentence. Color palette, lighting, lens aesthetic, mood. NO camera angles or movements.
-- Pick a tone consistent with the niche. Cute content → "warm bright daylight, soft pastel
-  palette, shallow depth-of-field, cheerful uplifting mood, 50mm cinematic." Horror →
-  "desaturated grayscale with blood-red accents, low-key lighting, ominous mood, 35mm grain."
-  Wins → "high-contrast vibrant color, golden-hour light, dynamic lens flares, triumphant
-  energy, sports-doc aesthetic."
+- 1 sentence. Lighting + ambient palette + mood, framed as a NATURAL PHONE CAPTURE. NO
+  camera angles or movements. NO cinematic vocabulary — do NOT write "cinematic", "50mm",
+  "35mm grain", "lens flares", "sports-doc", "shallow depth-of-field", "color graded",
+  "anamorphic". The clips should feel like raw, unplanned phone footage someone hit record
+  on, NOT a polished short film.
+- Anchor on phone-capture cues: "shot on iPhone", "vertical phone footage", "natural
+  daylight", "ambient indoor lighting", "no color grading", "raw home-video look",
+  "slight handheld wobble", "candid social-media energy".
+- Pick a tone consistent with the niche. Cute content → "shot on iPhone in soft natural
+  daylight, warm pastel ambient tones, slight handheld wobble, raw home-video look,
+  candid wholesome mood." Horror → "shot on a phone at night, low ambient light with
+  red practicals bleeding in, slight grain, raw uncolor-graded look, found-footage
+  unease." Wins → "shot on iPhone outdoors in bright daylight, vibrant natural color,
+  slight lens shake, social-media POV, raw unfiltered hype."
 
 ══════════════════════════════════════════════════════════════════════════════
 ON-SCREEN LAYOUT (this is what the renderer draws — write the fields below
@@ -135,13 +143,24 @@ Per item:
   scene_action — the peak kinetic beat for this 5s clip. ~12-22 words. ONE strong verb
             landing by second 3. NOT a static pose, NOT a reaction-only shot. Same density
             rules as narrative scene_actions.
-  scene_shot — camera framing: shot type + angle + movement. VARY across the 5 items so
-            cuts feel like a real edit. Mix wide / close-up / dutch / first-person POV /
-            bird's-eye / handheld.
+  scene_shot — phone-capture framing: shot type + angle + handheld movement. The frame is
+            ALWAYS vertical and ALWAYS feels like a phone someone is holding (slight
+            wobble, casual angles), NEVER like a tripod-locked or dolly-rigged cinema
+            camera. VARY across the 5 items so cuts feel like real candid moments.
+            Mix: front-facing selfie POV / raised-arm overhead / chest-height handheld /
+            over-the-shoulder phone / low ground-angle / behind-the-back / point-and-shoot
+            from across the room. NO "dolly-in", NO "crane", NO "tracking shot", NO
+            "anamorphic", NO "cinematic". If you want push-in motion, write "phone steps
+            closer" or "phone leans in".
 
 Strong action verbs to favor: snap, crack, leap, surge, plunge, lunge, dive, whip, crash,
 lash, burst, slam, pounce, flick, vault, twist, erupt, shatter, recoil, hurtle, snap, claw.
 Weak verbs to AVOID: walks, stands, looks, watches, sees, appears, waits, turns, gazes.
+
+PACE: clips play at NATURAL REAL-TIME SPEED. Do NOT write "slow", "slow-motion", "slowmo",
+"time-lapse", or "ramping" anywhere in scene_action or scene_shot. Describe camera motion
+in phone-handheld terms ("phone leans in", "phone pans across", "slight handheld wobble");
+never qualify them as slow.
 
 Multi-domain example pairs (study these — the format is the same regardless of tone):
 
@@ -150,42 +169,43 @@ main_title:    "Ranking Cutest Baby Responses Ever"
 title_lines:   ["Ranking Cutest", "Baby Responses Ever"]
 accent_phrase: "Baby Responses"
 subtitle:      "you wont believe the last one"
-style_anchor:  "Warm bright daylight, soft pastel palette, shallow depth-of-field,
-               cheerful uplifting mood, 50mm cinematic."
+style_anchor:  "Shot on iPhone in warm natural daylight, soft pastel ambient tones,
+               slight handheld wobble, no color grading, candid wholesome home-video look."
 items:
   rank=5 setting:"Cozy nursery with soft morning light"
          caption:"cute blue eyes"
          scene_action:"Baby's eyes widen as a parent's hand offers a rattle, sparkling
-                       blue irises catching the sunlight in slow zoom."
-         scene_shot:"Extreme close-up push-in on the eyes."
+                       blue irises catching the sunlight."
+         scene_shot:"Phone held close to baby's face, raised-arm vertical angle,
+                     slight handheld wobble."
   rank=4 setting:"Sunlit kitchen with high chair"
          caption:"i love mom"
          scene_action:"Baby reaches both arms toward an off-camera figure and giggles,
                        milk-dotted lips parting in joy."
-         scene_shot:"Medium handheld over-the-shoulder."
+         scene_shot:"Phone held over-the-shoulder by mom, casual chest-height vertical."
   rank=3 setting:"Living-room rug, midday"
          caption:"unbelievable"
          scene_action:"Baby's mouth drops fully open in cartoon-shock as a soap bubble
                        lands on a tiny finger."
-         scene_shot:"Low-angle close-up, slow dolly-in."
+         scene_shot:"Phone at low ground-angle on the rug, slight wobble as it leans in."
   rank=2 setting:"Bath time, fluffy towel"
          caption:"thank you"
          scene_action:"Baby clasps hands together briefly mid-towel-wrap, prayer-like,
                        beam erupting across the face."
-         scene_shot:"Eye-level close-up static."
+         scene_shot:"Phone held eye-level by parent, vertical, mostly static handheld."
   rank=1 setting:"Front-facing phone, golden-hour bedroom"
          caption:"Hiiii!"
          scene_action:"Baby leans into the lens until their cheek nearly touches it,
                        gigantic smile filling the frame, hand reaches up to pat camera."
-         scene_shot:"First-person POV close-up, gentle handheld bob."
+         scene_shot:"Front-facing selfie camera POV, in-hand, gentle handheld bob."
 
 ────── HORROR (Filipino mythology) ──────
 main_title:    "Top 5 Most Unsettling Tikbalang Encounters"
 title_lines:   ["Top 5 Most Unsettling", "Tikbalang Encounters"]
 accent_phrase: "Tikbalang Encounters"
 subtitle:      "no.1 is unhinged 🚨"
-style_anchor:  "Desaturated grayscale with blood-red accents, low-key cinematic lighting,
-               35mm grain, dread-mood."
+style_anchor:  "Shot on a phone at night, low ambient light with red practicals bleeding
+               in, slight phone grain, raw uncolor-graded look, found-footage dread."
 items (rank=5..1, each with 1-4 word brainrot horror caption):
   rank=5 caption:"hooves"           ...
   rank=4 caption:"wrong footprints" ...
@@ -198,8 +218,8 @@ main_title:    "Top 5 Wildest Skateboard Wins"
 title_lines:   ["Top 5 Wildest", "Skateboard Wins"]
 accent_phrase: "Skateboard Wins"
 subtitle:      "stick around for #1 fr"
-style_anchor:  "High-contrast vibrant color, golden-hour light, dynamic lens flares,
-               triumphant energy, sports-doc aesthetic."
+style_anchor:  "Shot on iPhone outdoors in bright daylight, vibrant natural color,
+               slight lens shake, social-media POV, raw unfiltered hype energy."
 items:
   rank=5 caption:"clean"             ...
   rank=4 caption:"sheesh"            ...
