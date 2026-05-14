@@ -1,12 +1,14 @@
 # shorty-factory
 
-Compose 6-8 connected Meta AI video clips into a vertical short, served via FastAPI and triggerable from n8n / Power Automate / curl. The pipeline is hexagonal: video and music providers are pluggable behind Protocols, so swapping `meta.ai` for Runway/Pika/Luma later is a single-file change.
+Compose 5-8 connected Meta AI video clips into a vertical short, served via FastAPI and triggerable from n8n / Power Automate / curl. The pipeline is hexagonal: video and music providers are pluggable behind Protocols, so swapping `meta.ai` for Runway/Pika/Luma later is a single-file change.
+
+Two video formats are supported: **narrative** (one connected story arc with a twist, default) and **top5** (countdown of 5 ranked moments around a theme). One API server handles both — different n8n workflows can drive different YouTube channels with their own niches and cadences. See [Modes](#modes) below.
 
 ## What it does
 
-1. **compose** — LLM (NVIDIA Build, OpenAI-compatible) splits an idea into N visually-connected ~5s scene prompts plus one POV caption.
+1. **compose** — LLM (NVIDIA Build, OpenAI-compatible) builds a `Storyboard` (narrative) or `TopFiveStoryboard` (top-5) from the idea + niche. Both implement `BaseStoryboard`, so downstream nodes don't branch on mode.
 2. **generate** — the configured `VideoProvider` adapter renders one clip per scene. Default adapter: `MetaAIVideoProvider` driving meta.ai via Playwright.
-3. **stitch** — ffmpeg normalises clips to 1080×1920 with a blurred-fill background and burns in the POV caption (e.g. *POV: You are an astronaut*).
+3. **stitch** — ffmpeg normalises clips to 1080×1920 with a blurred-fill background and burns in the captions described by `storyboard.build_caption_plan()`. Narrative mode: persistent POV caption. Top-5 mode: title at top + per-clip rank caption that switches at clip boundaries.
 4. **music** — the configured `MusicProvider` builds an audio bed of matching duration. Default: MusicGen (no Content ID risk). Alternative: pick a track from `assets/music/<niche>/`.
 5. **mux** — ffmpeg muxes audio onto video at the master gain → `final.mp4`.
 
@@ -95,8 +97,24 @@ The graph nodes are the **core** — they decide *what* should happen (compose, 
 | `VideoProvider` | [app/providers/video/base.py](app/providers/video/base.py) | `MetaAIVideoProvider` (Playwright). Future: Runway, Pika, Luma — each is a new file in [app/providers/video/](app/providers/video/) |
 | `MusicProvider` | [app/providers/music/base.py](app/providers/music/base.py) | `MusicGenMusicProvider` (default), `LocalLibraryMusicProvider` (`assets/music/<niche>/`) |
 | `ProgressSink` | [app/jobs/events.py](app/jobs/events.py) | `partial(store.update_progress, job_id)` in production; record-calls fake in tests |
+| `BaseStoryboard` | [app/graph/storyboards/base.py](app/graph/storyboards/base.py) | `Storyboard` (narrative), `TopFiveStoryboard` (top-5) — both expose `num_scenes()`, `prompt_for_scene(i)`, `build_caption_plan()` |
 
 Adding a new video provider: write `app/providers/video/runway.py` with a `RunwayVideoProvider` class implementing the Protocol, then add one `if name == "runway"` line to the factory in [app/providers/video/\_\_init\_\_.py](app/providers/video/__init__.py). No graph code changes.
+
+Adding a new format (e.g. "explainer" mode): write `app/graph/storyboards/explainer.py` with a class implementing `BaseStoryboard`, and `app/graph/composers/explainer.py` with a `compose_explainer()` function, then add one `if mode == "explainer"` branch to the dispatcher in [app/graph/composer.py](app/graph/composer.py). The graph nodes don't change — they only call protocol methods.
+
+## Modes
+
+The `mode` field on the `POST /jobs` body picks the storyboard format:
+
+| Mode | Composer | Storyboard | Caption layout | Typical use |
+|------|----------|------------|----------------|-------------|
+| `narrative` (default) | [composers/narrative.py](app/graph/composers/narrative.py) | `Storyboard` | One persistent POV caption | Connected story arc with a twist (4-8 clips) |
+| `top5` | [composers/top5.py](app/graph/composers/top5.py) | `TopFiveStoryboard` | Title pinned at top + per-clip rank caption (#5 → #1) | Countdown of 5 self-contained ranked moments |
+
+When `mode: "top5"`, `num_scenes` is silently clamped to 5 (the format demands it). The storyboard composer accepts any `niche` string — known niches (`filipino-mythology`, `cute`, `wins`, `fails`, `satisfying`, `funny`, `mind_blowing`, etc.) get tuned MusicGen prompts; unknown ones fall back to a neutral cinematic underscore (logged as a warning).
+
+Two-channel deployment shape: run one API server, drive it from two n8n workflows — one per channel — each with its own Schedule, niche list, idea-generation prompt, YouTube OAuth credential, and `mode` field. Both workflows go through the same single-flight queue (one Meta AI session can't safely serve parallel jobs). Walkthrough in [N8N_SETUP.md](N8N_SETUP.md).
 
 ## Risks worth knowing
 
@@ -154,13 +172,14 @@ GET  /healthz                    readiness probe (n8n consumes this)
 GET  /health                     liveness (just {"status":"ok"})
 ```
 
-`POST /jobs` body:
+`POST /jobs` body (narrative — default):
 
 ```json
 {
   "idea": "a Tikbalang lures a hunter deeper into the rainforest",
   "niche": "filipino-mythology",
   "num_scenes": 6,
+  "mode": "narrative",
   "pov_caption": null,
   "music_track": null,
   "music_mode": "generate",
@@ -168,9 +187,22 @@ GET  /health                     liveness (just {"status":"ok"})
 }
 ```
 
-- `pov_caption` is optional — if null, the LLM writes one.
+`POST /jobs` body (top-5):
+
+```json
+{
+  "idea": "top 5 most unsettling Tikbalang encounters",
+  "niche": "filipino-mythology",
+  "mode": "top5",
+  "music_mode": "generate",
+  "webhook_url": null
+}
+```
+
+- `mode` defaults to `"narrative"`. Pass `"top5"` for ranking format. `num_scenes` is ignored when `mode` is `"top5"` (always 5).
+- `pov_caption` is optional — if null, the LLM writes one. Only consumed by narrative mode (top-5 uses `main_title` from the LLM instead).
 - `music_mode` defaults to `"generate"` (MusicGen). Set to `"import"` to use a track from `assets/music/`. `music_track` is only consulted by `"import"`.
-- `webhook_url` is POSTed at terminal status with `{job_id, status, result_url|error, error_type}`.
+- `webhook_url` is POSTed at terminal status with `{job_id, status, result_url|error, error_type, youtube_title, youtube_description, youtube_tags}`.
 
 `GET /healthz` response shape:
 
@@ -224,8 +256,15 @@ app/
     schemas.py       JobCreate / JobStatus pydantic models
   graph/           LangGraph wiring (the "core" of the hexagon)
     graph.py         build_graph(progress=ProgressSink) — node factories
-    composer.py      LLM call for storyboard
-    state.py         Storyboard + JobState types
+    composer.py      compose() dispatcher — picks per-mode composer by `mode`
+    composers/      one file per mode
+      narrative.py   compose_narrative() + system prompt (story arc + twist)
+      top5.py        compose_top5() + system prompt (countdown, domain-agnostic)
+    storyboards/    one file per mode
+      base.py        BaseStoryboard protocol + CaptionPlan dataclass
+      narrative.py   Storyboard pydantic model
+      top5.py        TopFiveStoryboard + TopFiveItem pydantic models
+    state.py         JobState TypedDict (graph state, no schema definitions)
   jobs/            persistence + runner adapter
     runner.py        run_job → builds sink → drives the graph → posts webhook
     store.py         SQLite CRUD over the Job table
@@ -264,7 +303,11 @@ Three smoke tests, ordered by cost:
 
 1. **Composer (no Playwright)**:
    ```cmd
-   uv run python -c "import asyncio; from app.graph.composer import compose; print(asyncio.run(compose('a Tikbalang lures a hunter', 'filipino-mythology', 4)).model_dump_json(indent=2))"
+   :: Narrative mode
+   uv run python -c "import asyncio; from app.graph.composer import compose; print(asyncio.run(compose(idea='a Tikbalang lures a hunter', niche='filipino-mythology', num_scenes=4, mode='narrative')).model_dump_json(indent=2))"
+
+   :: Top-5 mode
+   uv run python -c "import asyncio; from app.graph.composer import compose; print(asyncio.run(compose(idea='top 5 most unsettling tikbalang encounters', niche='filipino-mythology', num_scenes=5, mode='top5')).model_dump_json(indent=2))"
    ```
 2. **Single video clip** (uses Playwright + meta.ai, ~2 min):
    ```cmd

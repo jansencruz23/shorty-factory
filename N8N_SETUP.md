@@ -194,9 +194,12 @@ A **Set** node `Build JobCreate`:
 - `idea`: `{{ $json.idea }}`
 - `niche`: `{{ $json.niche }}`
 - `num_scenes`: `4` (or `{{ $json.num_scenes ?? 4 }}` if the webhook supplied one)
+- `mode`: `narrative` (omit, or set to `top5` for ranking-mode workflows — see §3b)
 - `webhook_url`: `http://localhost:5678/webhook/shorty-done/{{ $execution.id }}`
 
 The `webhook_url` is hardcoded `localhost:5678` (not `$env.WEBHOOK_URL`) because n8n's `$env` access is blocked by default for security and we don't need indirection — the URL is stable for your local-Docker setup. shorty-factory (running on the host) reaches `localhost:5678` via Docker's port mapping.
+
+`mode` defaults to `"narrative"` server-side, so you can omit it from narrative workflows. Always set it to `"top5"` in ranking workflows (the next §) — easier to read than relying on the server default.
 
 ### 3.6 POST /jobs
 
@@ -225,9 +228,12 @@ On success:
   "status": "done",
   "result_url": "/jobs/abc123def456/download",
   "youtube_title": "The Tikbalang Hunter's Last Mistake",
-  "youtube_description": "Deep in the rainforest, a hunter pursues a creature said to vanish...\n\n#FilipinoMythology #Tikbalang #Folklore #Shorts"
+  "youtube_description": "Deep in the rainforest, a hunter pursues a creature said to vanish...\n\n#FilipinoMythology #Tikbalang #Folklore #Shorts",
+  "youtube_tags": ["filipino mythology", "tikbalang", "shorts", "horror short"]
 }
 ```
+
+The webhook payload shape is identical for narrative and top-5 modes — both schemas have `youtube_title`, `youtube_description`, and `youtube_tags`. n8n's YouTube node consumes them the same way regardless of mode.
 
 On failure:
 ```json
@@ -384,6 +390,106 @@ The `error_type` field gives you a stable token to route on. Common values:
 If you want differentiated notifications (e.g. session_expired pings a "fix me" chat, rate_limited pings nothing), branch on `{{ $json.error_type }}` with multiple IF nodes.
 
 Also attach an **Error Trigger** node to the workflow (separate sub-flow that fires on any unhandled n8n exception, not just shorty-factory errors) → Telegram with the workflow name and stack.
+
+## 3b. Ranking workflow (top-5 mode, second channel)
+
+Top-5 mode produces countdown Shorts ("Top 5 Most Satisfying Tikbalang Moments", "Top 5 Cutest Cat Reactions", etc.). It's a different format from narrative mode — five ranked self-contained moments, not a story arc — and most channels post both formats to **separate YouTube channels** since the audiences are different.
+
+**Deployment shape:** one shorty-factory API server, **two n8n workflows**. The narrative workflow you just built (§3) keeps running for the POV channel; you duplicate it here for the ranking channel. Both workflows POST to the same `/jobs` endpoint and share the single-flight queue — that's intentional (one Meta AI session can't safely serve parallel jobs). Each workflow has its own Schedule cadence, niche list, idea prompt, YouTube OAuth credential, and `mode` field.
+
+### 3b.1 Add a second YouTube OAuth credential
+
+In n8n: **Settings → Credentials → New → YouTube OAuth2 API**. Same flow as §2.2, but click "Connect my account" while logged into the **second YouTube channel** (use a private/incognito browser window to avoid Google auto-picking your default channel). Name it clearly, e.g. `YouTube — Ranking Channel`.
+
+If both channels live under the same Google account, you may need to switch active channel in YouTube Studio before the OAuth consent flow, or use a separate Google account entirely. Test by uploading a 1s test video manually before wiring n8n.
+
+### 3b.2 Duplicate the narrative workflow
+
+In n8n: **Workflows → ⋮ on your narrative workflow → Duplicate**. Rename to `shorty-ranking`. This gives you the full §3 graph (triggers, healthz guard, idea LLM, JobCreate, POST, Wait, IF, Download, YouTube, notify, error path) as a starting point. Now edit the parts that should differ.
+
+### 3b.3 Schedule trigger — different cadence
+
+In the duplicated workflow's **Schedule Trigger** node, pick a different posting time from the narrative workflow. Spreading the two channels across the day (e.g. POV at 7pm PHT, Ranking at 9am PHT) means:
+- The single-flight queue never collides — narrative finishes before ranking starts.
+- Each channel's analytics is comparable across days (same posting time → same audience window).
+- You can A/B different posting times per niche without coupling them.
+
+### 3b.4 Pick niche — top-5 niche list
+
+In the duplicated `Pick niche` Code node, replace the niche array with the broader top-5 categories (these match the entries in `PROMPT_FOR_NICHE` for tuned MusicGen prompts):
+
+```javascript
+const niches = [
+  "satisfying",
+  "cute",
+  "wins",
+  // "fails",
+  // "funny",
+  // "mind_blowing",
+  // "oddly_specific",
+  // "horror",   // mythology-flavored countdowns also work
+];
+
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+return [{ json: { niche: pick(niches) } }];
+```
+
+Add new niches as the channel finds what works. Each new niche string also needs an entry in `PROMPT_FOR_NICHE` ([app/providers/music/musicgen.py](app/providers/music/musicgen.py)) — without one, MusicGen falls back to the neutral default underscore (still works, just less tuned to the genre).
+
+### 3b.5 Idea LLM — top-5 prompt
+
+Replace the **Generate idea** HTTP Request node's system prompt to teach the LLM the countdown format:
+
+```json
+{
+  "model": "meta/llama-3.3-70b-instruct",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You write one-line video ideas for a Top-5 countdown short-form vertical AI shorts channel. Respond with STRICT JSON: {\"idea\": \"...\"}. The idea is a single sentence describing a Top-5 theme appropriate to the niche specified in the user message — e.g. 'Top 5 most satisfying domino chain reactions', 'Top 5 cutest cat reactions to bath time', 'Top 5 wildest skateboard wins of the year'. Always lead with 'Top 5'. No other fields."
+    },
+    {
+      "role": "user",
+      "content": "Niche: {{ $('Pick niche').item.json.niche }}\n\nGenerate today's Top-5 idea for this niche."
+    }
+  ],
+  "temperature": 0.9,
+  "response_format": {"type": "json_object"}
+}
+```
+
+### 3b.6 Set: JobCreate body — set `mode: "top5"`
+
+In the duplicated `Build JobCreate` Set node:
+- Add `mode`: `top5` (this is the only structural difference from narrative).
+- Remove or set `num_scenes` to `5` — top-5 always uses 5 clips. The server clamps it server-side either way, but explicit is friendlier.
+
+Everything else (idea, niche, webhook_url) stays the same.
+
+### 3b.7 YouTube node — swap to the ranking-channel credential
+
+In the duplicated `YouTube` upload node, change the **Credential** dropdown to `YouTube — Ranking Channel` (the credential you created in §3b.1). Leave the field expressions alone — `{{ $json.youtube_title }}`, `{{ $json.youtube_description }}`, `{{ ($json.youtube_tags || ['shorts', 'top 5']).join(', ') }}` all work the same way; the `TopFiveStoryboard` schema produces the same three metadata fields the narrative `Storyboard` does.
+
+Optionally bump the fallback Tags to ranking-flavored defaults: `($json.youtube_tags || ['shorts', 'top 5', 'countdown']).join(', ')`.
+
+### 3b.8 Activate and test
+
+Same drill as §4.1 — POST to the ranking workflow's webhook trigger URL with a top-5 idea:
+
+```cmd
+curl -X POST http://localhost:5678/webhook/short-ranking ^
+  -H "X-Trigger-Token: YOUR_SECRET" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"idea\":\"top 5 cutest cat reactions\",\"niche\":\"cute\",\"mode\":\"top5\"}"
+```
+
+(Pick a unique webhook path per workflow so they don't collide — e.g. `/webhook/short` for narrative, `/webhook/short-ranking` for ranking.)
+
+What to verify after a successful run:
+- `outputs/<job_id>/storyboard.json` contains a `main_title` field (e.g. "Top 5 Cutest Cat Reactions") and an `items` array with exactly 5 entries, each with `rank` (5 → 1), `caption`, `setting`, `scene_action`, `scene_shot`.
+- The final `final.mp4` shows the title pinned at the top of every clip and the rank caption (#5, #4, #3, #2, #1) switching at clip boundaries.
+- The MusicGen track matches the picked niche's flavor (cute → light/playful, wins → triumphant, etc.).
+- The video uploads to the **ranking** YouTube channel — double-check by opening YouTube Studio for that channel.
 
 ## 4. First-run testing
 

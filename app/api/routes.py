@@ -30,11 +30,16 @@ async def create_job(req: JobCreate) -> JobCreateResponse:
     # 12 hex chars ≈ 48 bits of entropy. Collision risk is negligible at
     # any scale this service is plausibly operating at.
     job_id = uuid.uuid4().hex[:12]
+    # Top-5 mode is fixed at exactly 5 clips (the format demands it). Silently
+    # clamp num_scenes here so n8n workflows don't have to remember the rule —
+    # they can pass num_scenes=5 explicitly OR rely on this clamp.
+    num_scenes = 5 if req.mode == "top5" else req.num_scenes
     initial: JobState = {
         "job_id": job_id,
         "idea": req.idea,
         "niche": req.niche,
-        "num_scenes": req.num_scenes,
+        "num_scenes": num_scenes,
+        "mode": req.mode,
         "pov_caption_override": req.pov_caption,
         "music_track": req.music_track,
         "music_mode": req.music_mode,
